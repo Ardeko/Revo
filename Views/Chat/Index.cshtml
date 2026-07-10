@@ -8,6 +8,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>REVO — Oda</title>
+    <link rel="icon" type="image/png" href="~/favicon.ico" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -16,11 +17,16 @@
             --bg: #0B0E13;
             --panel: #151A21;
             --panel-2: #1C232C;
+            --panel-3: #222A34;
             --border: #262E38;
+            --border-soft: #1e252e;
             --text: #EDEBE6;
             --text-dim: #8A93A3;
+            --text-faint: #545E6C;
             --amber: #E3A857;
+            --amber-soft: rgba(227, 168, 87, 0.14);
             --signal: #3ECFC0;
+            --signal-soft: rgba(62, 207, 192, 0.14);
             --danger: #C1594A;
         }
 
@@ -29,44 +35,85 @@
         html, body {
             margin: 0;
             height: 100%;
-            background: var(--bg);
+            background:
+                radial-gradient(circle at 50% 0%, #151b24 0%, var(--bg) 45%),
+                var(--bg);
             color: var(--text);
             font-family: 'IBM Plex Sans', sans-serif;
         }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--panel-3); }
 
         .app {
             display: flex;
             flex-direction: column;
             height: 100vh;
-            max-width: 960px;
+            max-width: 1000px;
             margin: 0 auto;
+            opacity: 0;
+            animation: fade-in 0.5s ease 0.05s forwards;
+        }
+
+        @@keyframes fade-in {
+            to { opacity: 1; }
         }
 
         .topbar {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 14px 20px;
-            border-bottom: 1px solid var(--border);
+            gap: 12px;
+            padding: 14px 22px;
+            border-bottom: 1px solid var(--border-soft);
             flex-shrink: 0;
+        }
+
+        .brand-lockup {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+        }
+
+        .brand-lockup img {
+            height: 22px;
+            width: auto;
+            opacity: 0.9;
         }
 
         .brand {
             font-family: 'Big Shoulders Display', sans-serif;
             font-weight: 800;
-            font-size: 26px;
-            letter-spacing: 1px;
-            color: var(--amber);
+            font-size: 24px;
+            letter-spacing: 1.5px;
+            background: linear-gradient(180deg, var(--text) 0%, var(--amber) 160%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
         }
 
         .status {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 9px;
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-dim);
-            letter-spacing: 0.5px;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            padding: 6px 12px;
+            border: 1px solid var(--border-soft);
+            border-radius: 999px;
+            background: rgba(21, 26, 33, 0.6);
+        }
+
+        .status-dot-wrap {
+            position: relative;
+            width: 8px;
+            height: 8px;
+            flex-shrink: 0;
         }
 
         .status-dot {
@@ -74,6 +121,10 @@
             height: 8px;
             border-radius: 50%;
             background: var(--danger);
+            display: block;
+            position: relative;
+            z-index: 1;
+            transition: background 0.3s ease;
         }
 
         .status-dot.connected {
@@ -81,23 +132,46 @@
             box-shadow: 0 0 8px var(--signal);
         }
 
+        .status-dot.connected::after {
+            content: "";
+            position: absolute;
+            inset: -5px;
+            border-radius: 50%;
+            border: 1px solid var(--signal);
+            opacity: 0.6;
+            animation: ripple 1.8s ease-out infinite;
+        }
+
+        @@keyframes ripple {
+            0% { transform: scale(0.4); opacity: 0.7; }
+            100% { transform: scale(2.4); opacity: 0; }
+        }
+
         .count {
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-dim);
+            letter-spacing: 0.5px;
+            padding: 6px 12px;
+            border: 1px solid var(--border-soft);
+            border-radius: 999px;
+            background: rgba(21, 26, 33, 0.6);
+            white-space: nowrap;
         }
 
         .room {
             flex: 1;
             display: grid;
-            grid-template-columns: 220px 1fr;
-            gap: 1px;
-            background: var(--border);
+            grid-template-columns: 232px 1fr;
+            gap: 14px;
+            padding: 14px;
             min-height: 0;
         }
 
         .panel {
-            background: var(--panel);
+            background: linear-gradient(180deg, var(--panel) 0%, #131820 100%);
+            border: 1px solid var(--border-soft);
+            border-radius: 16px;
             display: flex;
             flex-direction: column;
             min-height: 0;
@@ -106,12 +180,23 @@
 
         .panel-title {
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 11px;
+            font-size: 10.5px;
             text-transform: uppercase;
-            letter-spacing: 1.5px;
-            color: var(--text-dim);
-            margin: 0 0 12px 0;
+            letter-spacing: 1.8px;
+            color: var(--text-faint);
+            margin: 0 0 14px 0;
             flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .panel-title::before {
+            content: "";
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--signal);
         }
 
         .participant-list {
@@ -120,7 +205,7 @@
             padding: 0;
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 7px;
             overflow-y: auto;
         }
 
@@ -128,9 +213,22 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 8px 10px;
-            border-radius: 10px;
+            padding: 9px 11px;
+            border-radius: 11px;
             background: var(--panel-2);
+            border: 1px solid transparent;
+            transition: border-color 0.2s ease, background 0.2s ease;
+            animation: row-in 0.35s cubic-bezier(.16,.8,.3,1);
+        }
+
+        @@keyframes row-in {
+            from { opacity: 0; transform: translateX(-6px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .participant.speaking {
+            border-color: var(--signal-soft);
+            background: linear-gradient(90deg, rgba(62,207,192,0.08), var(--panel-2) 55%);
         }
 
         .participant .name {
@@ -170,6 +268,7 @@
         .participant .muted-icon {
             display: none;
             font-size: 12px;
+            opacity: 0.85;
         }
 
         .participant.muted .muted-icon {
@@ -178,7 +277,7 @@
 
         .participant .pending {
             font-size: 10px;
-            color: var(--text-dim);
+            color: var(--text-faint);
             font-family: 'IBM Plex Mono', monospace;
             white-space: nowrap;
         }
@@ -188,15 +287,17 @@
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 3px;
             margin-bottom: 12px;
             min-height: 0;
         }
 
         .message {
             font-size: 14px;
-            line-height: 1.4;
+            line-height: 1.5;
             word-break: break-word;
+            padding: 5px 2px;
+            animation: row-in 0.3s cubic-bezier(.16,.8,.3,1);
         }
 
         .message .who {
@@ -206,9 +307,9 @@
         }
 
         .message.system {
-            color: var(--text-dim);
+            color: var(--text-faint);
             font-style: italic;
-            font-size: 13px;
+            font-size: 12.5px;
         }
 
         .message-form {
@@ -219,48 +320,57 @@
 
         .message-form input {
             flex: 1;
-            padding: 10px 12px;
-            border-radius: 10px;
+            padding: 11px 14px;
+            border-radius: 11px;
             border: 1px solid var(--border);
             background: var(--panel-2);
             color: var(--text);
             font-family: inherit;
             font-size: 14px;
             min-width: 0;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .message-form input:hover {
+            border-color: #33404d;
         }
 
         .message-form input:focus {
-            outline: 2px solid var(--amber);
-            outline-offset: 1px;
+            outline: none;
+            border-color: var(--amber);
+            box-shadow: 0 0 0 3px var(--amber-soft);
         }
 
         .message-form button {
-            padding: 10px 16px;
-            border-radius: 10px;
+            padding: 11px 18px;
+            border-radius: 11px;
             border: none;
             background: var(--amber);
             color: #241a0d;
             font-weight: 600;
             cursor: pointer;
             font-family: inherit;
+            transition: filter 0.15s, transform 0.1s;
         }
 
         .message-form button:hover { filter: brightness(1.1); }
+        .message-form button:active { transform: scale(0.97); }
 
         .controls {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 16px;
+            gap: 18px;
             padding: 16px;
-            border-top: 1px solid var(--border);
-            background: var(--panel);
+            border-top: 1px solid var(--border-soft);
             flex-shrink: 0;
+            position: relative;
         }
 
         .mic-button {
-            width: 52px;
-            height: 52px;
+            position: relative;
+            width: 54px;
+            height: 54px;
             border-radius: 50%;
             border: 2px solid var(--signal);
             background: var(--panel-2);
@@ -273,7 +383,24 @@
             padding: 0;
         }
 
+        .mic-button::after {
+            content: "";
+            position: absolute;
+            inset: -6px;
+            border-radius: 50%;
+            border: 1px solid var(--signal);
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .mic-button:not([aria-pressed="true"])::after {
+            opacity: 0.35;
+            animation: ripple 2.4s ease-out infinite;
+        }
+
         .mic-button svg { width: 22px; height: 22px; }
+
+        .mic-button:hover { filter: brightness(1.15); transform: scale(1.03); }
 
         .mic-button[aria-pressed="true"] {
             border-color: var(--danger);
@@ -281,9 +408,11 @@
             background: rgba(193, 89, 74, 0.12);
         }
 
+        .mic-button[aria-pressed="true"]::after { display: none; }
+
         .leave-button {
-            padding: 12px 18px;
-            border-radius: 10px;
+            padding: 13px 20px;
+            border-radius: 11px;
             border: 1px solid var(--danger);
             background: transparent;
             color: var(--danger);
@@ -291,9 +420,39 @@
             cursor: pointer;
             font-family: inherit;
             font-size: 14px;
+            transition: background 0.15s, transform 0.1s;
         }
 
-        .leave-button:hover { background: rgba(193, 89, 74, 0.1); }
+        .leave-button:hover { background: rgba(193, 89, 74, 0.12); }
+        .leave-button:active { transform: scale(0.97); }
+
+        /* ---------- Ardeko Studios credit ---------- */
+
+        .credit {
+            position: absolute;
+            right: 18px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            opacity: 0.45;
+            text-decoration: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .credit:hover { opacity: 0.9; }
+
+        .credit img {
+            height: 13px;
+            width: auto;
+        }
+
+        .credit span {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9.5px;
+            letter-spacing: 1.4px;
+            text-transform: uppercase;
+            color: var(--text-faint);
+        }
 
         @@media (max-width: 640px) {
             .room {
@@ -302,7 +461,7 @@
             }
 
             .participants-panel {
-                max-height: 130px;
+                max-height: 140px;
             }
 
             .participant-list {
@@ -313,19 +472,31 @@
             .participant {
                 flex: 0 0 auto;
             }
+
+            .credit {
+                position: static;
+                margin-top: 10px;
+            }
+
+            .controls {
+                flex-wrap: wrap;
+            }
         }
 
         @@media (prefers-reduced-motion: reduce) {
-            * { transition: none !important; }
+            * { animation: none !important; transition: none !important; }
         }
     </style>
 </head>
 <body>
     <div class="app">
         <header class="topbar">
-            <div class="brand">REVO</div>
+            <div class="brand-lockup">
+                <img src="/img/ardeko.png" alt="" />
+                <span class="brand">REVO</span>
+            </div>
             <div class="status">
-                <span class="status-dot" id="statusDot"></span>
+                <span class="status-dot-wrap"><span class="status-dot" id="statusDot"></span></span>
                 <span id="statusText">BAĞLANIYOR</span>
             </div>
             <div class="count" id="participantCount">1 kişi</div>
@@ -357,6 +528,10 @@
                 </svg>
             </button>
             <button id="leaveButton" class="leave-button" type="button">Odadan Çık</button>
+
+            <a class="credit" href="#" tabindex="-1" aria-hidden="true">
+    <img src="/img/ardeko.png" alt="" /> <span>Ardeko Studios</span>
+</a>
         </footer>
     </div>
 

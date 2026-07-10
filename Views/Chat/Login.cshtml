@@ -7,18 +7,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>REVO — Giriş</title>
+    <link rel="icon" type="image/png" href="~/favicon.ico" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg: #0B0E13;
+            --bg-2: #10141C;
+            --panel: #151A21;
             --panel-2: #1C232C;
+            --panel-3: #222A34;
             --border: #262E38;
+            --border-soft: #1e252e;
             --text: #EDEBE6;
             --text-dim: #8A93A3;
+            --text-faint: #545E6C;
             --amber: #E3A857;
+            --amber-soft: rgba(227, 168, 87, 0.14);
             --signal: #3ECFC0;
+            --signal-soft: rgba(62, 207, 192, 0.14);
+            --danger: #C1594A;
         }
 
         * { box-sizing: border-box; }
@@ -26,47 +35,141 @@
         html, body {
             margin: 0;
             min-height: 100%;
-            background: radial-gradient(circle at 50% 15%, #1a2029 0%, var(--bg) 60%);
+            background: var(--bg);
             color: var(--text);
             font-family: 'IBM Plex Sans', sans-serif;
+            overflow-x: hidden;
+        }
+
+        body {
+            position: relative;
+            min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 24px;
         }
 
-        .card {
-            width: min(380px, 100%);
-            text-align: center;
+        /* ---------- Ambient background: drifting frequency field ---------- */
+
+        .field {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            background:
+                radial-gradient(circle at 50% 8%, #1a2029 0%, var(--bg) 55%),
+                var(--bg);
+            overflow: hidden;
         }
 
-        .dial {
-            width: 120px;
-            height: 120px;
-            margin: 0 auto 20px;
+        .field svg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.55;
         }
+
+        .scan-line {
+            stroke: var(--signal);
+            stroke-width: 1;
+            fill: none;
+            opacity: 0.16;
+        }
+
+        .scan-line.amber { stroke: var(--amber); opacity: 0.1; }
+
+        .scan-1 { animation: drift-x 26s linear infinite; }
+        .scan-2 { animation: drift-x 34s linear infinite reverse; }
+        .scan-3 { animation: drift-x 42s linear infinite; }
+
+        @@keyframes drift-x {
+            from { transform: translateX(-6%); }
+            to { transform: translateX(6%); }
+        }
+
+        .grain {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+            opacity: 0.025;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+
+        /* ---------- Card ---------- */
+
+        .card {
+            position: relative;
+            z-index: 2;
+            width: min(400px, 100%);
+            text-align: center;
+            opacity: 0;
+            transform: translateY(14px);
+            animation: rise 0.7s cubic-bezier(.16,.8,.3,1) 0.05s forwards;
+        }
+
+        @@keyframes rise {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .dial-wrap {
+            position: relative;
+            width: 132px;
+            height: 132px;
+            margin: 0 auto 22px;
+        }
+
+        .dial-halo {
+            position: absolute;
+            inset: -18px;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--signal-soft) 0%, transparent 70%);
+            animation: pulse-halo 3.2s ease-in-out infinite;
+        }
+
+        @@keyframes pulse-halo {
+            0%, 100% { transform: scale(0.92); opacity: 0.6; }
+            50% { transform: scale(1.06); opacity: 1; }
+        }
+
+        .dial { width: 100%; height: 100%; position: relative; z-index: 1; }
 
         .dial circle.ring {
             fill: none;
             stroke: var(--border);
-            stroke-width: 2;
+            stroke-width: 1.5;
+        }
+
+        .dial circle.tick-ring {
+            fill: none;
+            stroke: var(--border-soft);
+            stroke-width: 1;
+            stroke-dasharray: 1 7.5;
         }
 
         .dial circle.glow {
             fill: none;
             stroke: var(--amber);
             stroke-width: 2;
-            stroke-dasharray: 4 10;
-            transform-origin: 60px 60px;
-            animation: spin 14s linear infinite;
+            stroke-linecap: round;
+            stroke-dasharray: 10 210;
+            transform-origin: 66px 66px;
+            animation: spin 10s linear infinite;
+            filter: drop-shadow(0 0 4px var(--amber));
         }
 
         .dial .needle {
             stroke: var(--signal);
             stroke-width: 3;
             stroke-linecap: round;
-            transform-origin: 60px 60px;
-            animation: sweep 3.2s ease-in-out infinite;
+            transform-origin: 66px 66px;
+            animation: sweep 3.4s ease-in-out infinite;
+            filter: drop-shadow(0 0 5px var(--signal));
+        }
+
+        .dial .needle-hub {
+            fill: var(--signal);
         }
 
         @@keyframes spin {
@@ -74,28 +177,32 @@
         }
 
         @@keyframes sweep {
-            0%, 100% { transform: rotate(-35deg); }
-            50% { transform: rotate(35deg); }
+            0%, 100% { transform: rotate(-32deg); }
+            50% { transform: rotate(32deg); }
         }
 
         @@media (prefers-reduced-motion: reduce) {
-            .dial .glow, .dial .needle { animation: none; }
+            .dial .glow, .dial .needle, .dial-halo, .scan-1, .scan-2, .scan-3 { animation: none; }
         }
 
         h1 {
             font-family: 'Big Shoulders Display', sans-serif;
-            font-size: 48px;
+            font-size: 52px;
             font-weight: 800;
-            letter-spacing: 2px;
+            letter-spacing: 3px;
             margin: 0;
-            color: var(--amber);
+            background: linear-gradient(180deg, var(--text) 0%, var(--amber) 140%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
         }
 
         .tagline {
             color: var(--text-dim);
-            font-size: 14px;
-            margin: 6px 0 28px;
+            font-size: 13px;
+            margin: 8px 0 34px;
             font-family: 'IBM Plex Mono', monospace;
+            letter-spacing: 0.3px;
         }
 
         form {
@@ -104,8 +211,13 @@
             gap: 12px;
         }
 
+        .field-group {
+            position: relative;
+        }
+
         input[type="text"] {
-            padding: 14px 16px;
+            width: 100%;
+            padding: 15px 16px;
             border-radius: 12px;
             border: 1px solid var(--border);
             background: var(--panel-2);
@@ -113,19 +225,27 @@
             font-size: 16px;
             font-family: inherit;
             text-align: center;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+
+        input[type="text"]:hover {
+            border-color: #33404d;
         }
 
         input[type="text"]:focus {
-            outline: 2px solid var(--amber);
-            outline-offset: 2px;
+            outline: none;
+            border-color: var(--amber);
+            box-shadow: 0 0 0 4px var(--amber-soft);
+            background: var(--panel-3);
         }
 
         input[type="text"]::placeholder {
-            color: var(--text-dim);
+            color: var(--text-faint);
         }
 
-        button {
-            padding: 14px 16px;
+        button[type="submit"] {
+            position: relative;
+            padding: 15px 16px;
             border-radius: 12px;
             border: none;
             background: var(--amber);
@@ -134,26 +254,107 @@
             font-size: 15px;
             letter-spacing: 0.5px;
             cursor: pointer;
-            transition: filter 0.15s;
+            transition: filter 0.15s, transform 0.15s;
+            overflow: hidden;
         }
 
-        button:hover { filter: brightness(1.1); }
-        button:active { filter: brightness(0.95); }
+        button[type="submit"]::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.35) 50%, transparent 70%);
+            transform: translateX(-120%);
+            transition: transform 0.6s ease;
+        }
+
+        button[type="submit"]:hover::after { transform: translateX(120%); }
+        button[type="submit"]:hover { filter: brightness(1.08); }
+        button[type="submit"]:active { transform: scale(0.98); filter: brightness(0.95); }
+
+        /* ---------- Ardeko Studios nameplate (stamped like hardware badge) ---------- */
+
+        .nameplate {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            margin-top: 40px;
+            padding: 7px 14px 7px 9px;
+            border: 1px solid var(--border-soft);
+            border-radius: 999px;
+            background: rgba(28, 35, 44, 0.5);
+            backdrop-filter: blur(6px);
+            opacity: 0;
+            transform: translateY(8px);
+            animation: rise 0.6s cubic-bezier(.16,.8,.3,1) 0.55s forwards;
+            text-decoration: none;
+            transition: border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .nameplate:hover {
+            border-color: var(--amber);
+            background: rgba(28, 35, 44, 0.85);
+        }
+
+        .nameplate img {
+            height: 16px;
+            width: auto;
+            display: block;
+            opacity: 0.85;
+        }
+
+        .nameplate .plate-text {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10px;
+            letter-spacing: 1.6px;
+            text-transform: uppercase;
+            color: var(--text-faint);
+        }
+
+        .nameplate .plate-text b {
+            color: var(--text-dim);
+            font-weight: 600;
+        }
+
+        .nameplate:hover .plate-text,
+        .nameplate:hover .plate-text b {
+            color: var(--text-dim);
+        }
     </style>
 </head>
 <body>
-    <div class="card">
-        <svg class="dial" viewBox="0 0 120 120" aria-hidden="true">
-            <circle class="ring" cx="60" cy="60" r="50" />
-            <circle class="glow" cx="60" cy="60" r="50" />
-            <line class="needle" x1="60" y1="60" x2="60" y2="18" />
+    <div class="field" aria-hidden="true">
+        <svg viewBox="0 0 800 800" preserveAspectRatio="none">
+            <path class="scan-line scan-1" d="M -50 620 Q 200 560 400 620 T 850 620" />
+            <path class="scan-line scan-2 amber" d="M -50 180 Q 220 240 400 180 T 850 180" />
+            <path class="scan-line scan-3" d="M -50 400 Q 200 360 400 400 T 850 400" />
         </svg>
+    </div>
+    <div class="grain" aria-hidden="true"></div>
+
+    <div class="card">
+        <div class="dial-wrap">
+            <div class="dial-halo" aria-hidden="true"></div>
+            <svg class="dial" viewBox="0 0 132 132" aria-hidden="true">
+                <circle class="tick-ring" cx="66" cy="66" r="58" />
+                <circle class="ring" cx="66" cy="66" r="52" />
+                <circle class="glow" cx="66" cy="66" r="52" />
+                <line class="needle" x1="66" y1="66" x2="66" y2="20" />
+                <circle class="needle-hub" cx="66" cy="66" r="4" />
+            </svg>
+        </div>
         <h1>REVO</h1>
         <p class="tagline">Arkadaşlarınla aynı frekansta buluş</p>
         <form method="get" asp-action="Index" asp-controller="Chat">
+            <div class="field-group">
             <input type="text" name="username" placeholder="Nickini yaz…" required maxlength="24" autofocus autocomplete="off" />
-            <button type="submit">Odaya Gir</button>
-        </form>
-    </div>
+        </div>
+        <button type="submit">Odaya Gir</button>
+    </form>
+
+    <a class="nameplate" href="#" tabindex="-1" aria-hidden="true">
+        <img src="/img/ardeko.png" alt="" />
+        <span class="plate-text">Crafted by <b>Ardeko Studios</b></span>
+    </a>
+</div>
 </body>
 </html>
