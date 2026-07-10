@@ -72,16 +72,26 @@
         }
 
         .brand-lockup {
-            display: flex;
-            align-items: center;
-            gap: 9px;
-        }
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: linear-gradient(90deg, rgba(28, 35, 44, 0.6), transparent);
+    padding: 6px 20px 6px 10px;
+    border-left: 3px solid var(--amber);
+    border-radius: 4px 16px 16px 4px;
+    box-shadow: inset 1px 0 0 rgba(255,255,255,0.05);
+}
 
-        .brand-lockup img {
-            height: 22px;
-            width: auto;
-            opacity: 0.9;
-        }
+.brand-lockup img {
+    height: 36px;
+    width: auto;
+    filter: drop-shadow(0 0 4px rgba(227, 168, 87, 0.25));
+    transition: filter 0.3s ease;
+}
+
+.brand-lockup:hover img {
+    filter: drop-shadow(0 0 8px var(--amber));
+}
 
         .brand {
             font-family: 'Big Shoulders Display', sans-serif;
@@ -442,7 +452,7 @@
         .credit:hover { opacity: 0.9; }
 
         .credit img {
-            height: 13px;
+            height: 26px;
             width: auto;
         }
 
