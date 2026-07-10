@@ -9,10 +9,16 @@ public class ChatController : Controller
         return View();
     }
 
-    public IActionResult Index(string username)
+    public IActionResult Index(string? username)
     {
+        username = username?.Trim();
+
         if (string.IsNullOrWhiteSpace(username))
             return RedirectToAction("Login");
+
+        // Nick'i arayüzü bozmayacak makul bir uzunlukta tut (client-side maxlength'e ek güvence).
+        if (username.Length > 24)
+            username = username.Substring(0, 24);
 
         ViewBag.Username = username;
         return View();

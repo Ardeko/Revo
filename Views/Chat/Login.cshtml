@@ -2,19 +2,157 @@
     Layout = null;
 }
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>REVO - Nick</title>
-    <link rel="stylesheet" href="~/css/site.css">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>REVO — Giriş</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0B0E13;
+            --panel-2: #1C232C;
+            --border: #262E38;
+            --text: #EDEBE6;
+            --text-dim: #8A93A3;
+            --amber: #E3A857;
+            --signal: #3ECFC0;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            min-height: 100%;
+            background: radial-gradient(circle at 50% 15%, #1a2029 0%, var(--bg) 60%);
+            color: var(--text);
+            font-family: 'IBM Plex Sans', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .card {
+            width: min(380px, 100%);
+            text-align: center;
+        }
+
+        .dial {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 20px;
+        }
+
+        .dial circle.ring {
+            fill: none;
+            stroke: var(--border);
+            stroke-width: 2;
+        }
+
+        .dial circle.glow {
+            fill: none;
+            stroke: var(--amber);
+            stroke-width: 2;
+            stroke-dasharray: 4 10;
+            transform-origin: 60px 60px;
+            animation: spin 14s linear infinite;
+        }
+
+        .dial .needle {
+            stroke: var(--signal);
+            stroke-width: 3;
+            stroke-linecap: round;
+            transform-origin: 60px 60px;
+            animation: sweep 3.2s ease-in-out infinite;
+        }
+
+        @@keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @@keyframes sweep {
+            0%, 100% { transform: rotate(-35deg); }
+            50% { transform: rotate(35deg); }
+        }
+
+        @@media (prefers-reduced-motion: reduce) {
+            .dial .glow, .dial .needle { animation: none; }
+        }
+
+        h1 {
+            font-family: 'Big Shoulders Display', sans-serif;
+            font-size: 48px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            margin: 0;
+            color: var(--amber);
+        }
+
+        .tagline {
+            color: var(--text-dim);
+            font-size: 14px;
+            margin: 6px 0 28px;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        input[type="text"] {
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--panel-2);
+            color: var(--text);
+            font-size: 16px;
+            font-family: inherit;
+            text-align: center;
+        }
+
+        input[type="text"]:focus {
+            outline: 2px solid var(--amber);
+            outline-offset: 2px;
+        }
+
+        input[type="text"]::placeholder {
+            color: var(--text-dim);
+        }
+
+        button {
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: none;
+            background: var(--amber);
+            color: #241a0d;
+            font-weight: 700;
+            font-size: 15px;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: filter 0.15s;
+        }
+
+        button:hover { filter: brightness(1.1); }
+        button:active { filter: brightness(0.95); }
+    </style>
 </head>
 <body>
-    <div class="login-container">
-        <h2>REVO Sohbet Uygulamasına Hoş Geldiniz!</h2>
+    <div class="card">
+        <svg class="dial" viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="ring" cx="60" cy="60" r="50" />
+            <circle class="glow" cx="60" cy="60" r="50" />
+            <line class="needle" x1="60" y1="60" x2="60" y2="18" />
+        </svg>
+        <h1>REVO</h1>
+        <p class="tagline">Arkadaşlarınla aynı frekansta buluş</p>
         <form method="get" asp-action="Index" asp-controller="Chat">
-            <input type="text" name="username" placeholder="Nick gir..." required />
-            <button type="submit">Sohbete Katıl</button>
+            <input type="text" name="username" placeholder="Nickini yaz…" required maxlength="24" autofocus autocomplete="off" />
+            <button type="submit">Odaya Gir</button>
         </form>
     </div>
 </body>

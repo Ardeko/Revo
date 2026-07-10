@@ -1,214 +1,716 @@
-﻿@{
+@{
     Layout = null;
-    var username = ViewBag.Username; 
+    string username = ViewBag.Username ?? "Misafir";
 }
-
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>REVO Chat</title>
-    <link rel="stylesheet" href="~/css/site.css">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>REVO — Oda</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0B0E13;
+            --panel: #151A21;
+            --panel-2: #1C232C;
+            --border: #262E38;
+            --text: #EDEBE6;
+            --text-dim: #8A93A3;
+            --amber: #E3A857;
+            --signal: #3ECFC0;
+            --danger: #C1594A;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'IBM Plex Sans', sans-serif;
+        }
+
+        .app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .brand {
+            font-family: 'Big Shoulders Display', sans-serif;
+            font-weight: 800;
+            font-size: 26px;
+            letter-spacing: 1px;
+            color: var(--amber);
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 12px;
+            color: var(--text-dim);
+            letter-spacing: 0.5px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--danger);
+        }
+
+        .status-dot.connected {
+            background: var(--signal);
+            box-shadow: 0 0 8px var(--signal);
+        }
+
+        .count {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        .room {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            gap: 1px;
+            background: var(--border);
+            min-height: 0;
+        }
+
+        .panel {
+            background: var(--panel);
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            padding: 16px;
+        }
+
+        .panel-title {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-dim);
+            margin: 0 0 12px 0;
+            flex-shrink: 0;
+        }
+
+        .participant-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow-y: auto;
+        }
+
+        .participant {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 10px;
+            background: var(--panel-2);
+        }
+
+        .participant .name {
+            flex: 1;
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .participant.you .name {
+            color: var(--amber);
+            font-weight: 600;
+        }
+
+        .participant .meter {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 14px;
+            flex-shrink: 0;
+        }
+
+        .meter .bar {
+            width: 3px;
+            height: 3px;
+            background: var(--signal);
+            border-radius: 1px;
+            opacity: 0.35;
+            transition: height 0.08s ease-out;
+        }
+
+        .participant.speaking .meter .bar {
+            opacity: 1;
+        }
+
+        .participant .muted-icon {
+            display: none;
+            font-size: 12px;
+        }
+
+        .participant.muted .muted-icon {
+            display: inline;
+        }
+
+        .participant .pending {
+            font-size: 10px;
+            color: var(--text-dim);
+            font-family: 'IBM Plex Mono', monospace;
+            white-space: nowrap;
+        }
+
+        .chat-panel .messages {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 12px;
+            min-height: 0;
+        }
+
+        .message {
+            font-size: 14px;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+
+        .message .who {
+            color: var(--amber);
+            font-weight: 600;
+            margin-right: 4px;
+        }
+
+        .message.system {
+            color: var(--text-dim);
+            font-style: italic;
+            font-size: 13px;
+        }
+
+        .message-form {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .message-form input {
+            flex: 1;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--panel-2);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 14px;
+            min-width: 0;
+        }
+
+        .message-form input:focus {
+            outline: 2px solid var(--amber);
+            outline-offset: 1px;
+        }
+
+        .message-form button {
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: none;
+            background: var(--amber);
+            color: #241a0d;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .message-form button:hover { filter: brightness(1.1); }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            padding: 16px;
+            border-top: 1px solid var(--border);
+            background: var(--panel);
+            flex-shrink: 0;
+        }
+
+        .mic-button {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: 2px solid var(--signal);
+            background: var(--panel-2);
+            color: var(--signal);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s;
+            padding: 0;
+        }
+
+        .mic-button svg { width: 22px; height: 22px; }
+
+        .mic-button[aria-pressed="true"] {
+            border-color: var(--danger);
+            color: var(--danger);
+            background: rgba(193, 89, 74, 0.12);
+        }
+
+        .leave-button {
+            padding: 12px 18px;
+            border-radius: 10px;
+            border: 1px solid var(--danger);
+            background: transparent;
+            color: var(--danger);
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14px;
+        }
+
+        .leave-button:hover { background: rgba(193, 89, 74, 0.1); }
+
+        @@media (max-width: 640px) {
+            .room {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr;
+            }
+
+            .participants-panel {
+                max-height: 130px;
+            }
+
+            .participant-list {
+                flex-direction: row;
+                flex-wrap: wrap;
+            }
+
+            .participant {
+                flex: 0 0 auto;
+            }
+        }
+
+        @@media (prefers-reduced-motion: reduce) {
+            * { transition: none !important; }
+        }
+    </style>
 </head>
 <body>
-    <div class="chat-container">
-        <h3>REVO Sohbet Odası - Hoş geldin, @username</h3>
-        <div id="messagesList"></div>
-        <input type="text" id="messageInput" placeholder="Mesaj yaz..." />
-        <button onclick="sendMessage()">Gönder</button>
+    <div class="app">
+        <header class="topbar">
+            <div class="brand">REVO</div>
+            <div class="status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">BAĞLANIYOR</span>
+            </div>
+            <div class="count" id="participantCount">1 kişi</div>
+        </header>
 
-        <button id="startCallButton">Sesli Sohbeti Başlat</button>
-        <button id="endCallButton" style="display:none;">Sesli Sohbeti Sonlandır</button>
+        <main class="room">
+            <section class="panel participants-panel">
+                <h2 class="panel-title">Frekansta</h2>
+                <ul class="participant-list" id="participantList"></ul>
+            </section>
 
-        <audio id="localAudio" autoplay muted></audio>
-        <audio id="remoteAudio" autoplay></audio>
+            <section class="panel chat-panel">
+                <h2 class="panel-title">Sohbet</h2>
+                <div class="messages" id="messagesList"></div>
+                <form class="message-form" id="messageForm">
+                    <input type="text" id="messageInput" placeholder="Mesaj yaz…" autocomplete="off" maxlength="500" />
+                    <button type="submit">Gönder</button>
+                </form>
+            </section>
+        </main>
+
+        <footer class="controls">
+            <button id="muteButton" class="mic-button" type="button" aria-pressed="false" aria-label="Mikrofonu kapat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+            </button>
+            <button id="leaveButton" class="leave-button" type="button">Odadan Çık</button>
+        </footer>
     </div>
 
-    <div id="connectionStatus" style="display:none; color: #00ff00; font-weight: bold; text-align: center; margin-top: 20px;">Bağlantı kuruldu!</div>
-
+    <div id="remoteAudios" style="display:none;" aria-hidden="true"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
     <script>
-        let peerConnection;
-        let localStream;
-        const currentUsername = "@username"; // Kullanıcı adını bir değişkene al
+        (function () {
+            // ViewBag.Username'i JSON olarak güvenli biçimde JS string'ine gömüyoruz.
+            // (Eski koddaki "@@username" doğrudan gömme yöntemi, nick içinde tırnak veya
+            // script kapatma etiketi gibi karakterler olursa sayfayı kırabiliyordu.)
+            const currentUsername = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(username));
 
-        // WebRTC için STUN sunucusu
-        const configuration = {
-            iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-        };
-
-        // SignalR bağlantısını başlatma
-        const connection = new signalR.HubConnectionBuilder()
-            .withUrl("/chatHub")
-            .build();
-
-        // Mesajları al ve ekrana yazdır
-        connection.on("ReceiveMessage", function (user, message) {
-            const msg = document.createElement("div");
-            msg.classList.add("message");
-            msg.textContent = `${user}: ${message}`;
-            document.getElementById("messagesList").appendChild(msg);
-            document.getElementById("messagesList").scrollTop = document.getElementById("messagesList").scrollHeight;
-        });
-
-        // Sesli görüşme için gerekli işlemleri başlat (Güncellendi)
-        connection.on("ReceiveICECandidate", (user, candidateStr) => { // user parametresi eklendi
-            if (user === currentUsername) return; // Kendi gönderdiğimiz adayı işlemeyi atla
-
-            try {
-                const candidate = JSON.parse(candidateStr); // JSON'dan objeye dönüştür
-                console.log(`Received ICE candidate from ${user}:`, candidate);
-                peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-            } catch (e) {
-                console.error("Error parsing ICE candidate:", e);
-            }
-        });
-
-        connection.on("ReceiveOffer", (user, offerStr) => { // user parametresi eklendi
-            if (user === currentUsername) return; // Kendi gönderdiğimiz offer'ı işlemeyi atla
-
-            try {
-                const offer = JSON.parse(offerStr); // JSON'dan objeye dönüştür
-                console.log(`Received Offer from ${user}:`, offer);
-                createAnswer(offer);
-            } catch (e) {
-                console.error("Error parsing offer:", e);
-            }
-        });
-
-        connection.on("ReceiveAnswer", (user, answerStr) => { // user parametresi eklendi
-            if (user === currentUsername) return; // Kendi gönderdiğimiz answer'ı işlemeyi atla
-
-            try {
-                const answer = JSON.parse(answerStr); // JSON'dan objeye dönüştür
-                console.log(`Received Answer from ${user}:`, answer);
-                peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-            } catch (e) {
-                console.error("Error parsing answer:", e);
-            }
-        });
-
-        // WebRTC peer connection oluşturulması
-        const createPeerConnection = async () => { // Async yapıldı
-            peerConnection = new RTCPeerConnection(configuration);
-
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    console.log("Sending ICE candidate:", event.candidate);
-                    // ICE adayını JSON string'ine çevirerek gönder
-                    connection.invoke("SendICECandidate", currentUsername, JSON.stringify(event.candidate))
-                        .catch(err => console.error("Error sending ICE candidate: ", err));
-                }
+            const configuration = {
+                iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
             };
 
-            peerConnection.ontrack = (event) => {
-                console.log("Received remote track:", event.streams[0]);
-                const remoteAudio = document.getElementById("remoteAudio");
-                if (remoteAudio.srcObject !== event.streams[0]) {
-                    remoteAudio.srcObject = event.streams[0]; // Uzak tarafın sesi
+            let localStream = null;
+            let isMuted = false;
+            let sharedAudioCtx = null;
+
+            // connectionId -> { username, pc, audioEl, muted }
+            const participants = new Map();
+
+            const connection = new signalR.HubConnectionBuilder()
+                .withUrl("/chatHub")
+                .withAutomaticReconnect()
+                .build();
+
+            // ---------- Küçük UI yardımcıları ----------
+
+            function setStatus(connected) {
+                document.getElementById("statusDot").classList.toggle("connected", connected);
+                document.getElementById("statusText").textContent = connected ? "SİNYAL VAR" : "BAĞLANIYOR";
+            }
+
+            function appendSystemMessage(text) {
+                const el = document.createElement("div");
+                el.className = "message system";
+                el.textContent = text;
+                const list = document.getElementById("messagesList");
+                list.appendChild(el);
+                list.scrollTop = list.scrollHeight;
+            }
+
+            function appendChatMessage(user, text) {
+                const el = document.createElement("div");
+                el.className = "message";
+                const who = document.createElement("span");
+                who.className = "who";
+                who.textContent = user + ":";
+                el.appendChild(who);
+                el.appendChild(document.createTextNode(" " + text));
+                const list = document.getElementById("messagesList");
+                list.appendChild(el);
+                list.scrollTop = list.scrollHeight;
+            }
+
+            function buildParticipantRow(connectionId, name, isYou, muted, status) {
+                const li = document.createElement("li");
+                li.className = "participant" + (isYou ? " you" : "") + (muted ? " muted" : "");
+                li.dataset.connectionId = connectionId;
+
+                const nameEl = document.createElement("span");
+                nameEl.className = "name";
+                nameEl.textContent = isYou ? `${name} (Sen)` : name;
+                li.appendChild(nameEl);
+
+                if (!isYou && status !== "connected") {
+                    const isTrouble = status === "failed" || status === "disconnected" || status === "closed";
+                    const badge = document.createElement("span");
+                    badge.className = "pending";
+                    badge.textContent = isTrouble ? "bağlantı sorunu" : "bağlanıyor…";
+                    li.appendChild(badge);
                 }
-            };
-            
-            // Yerel medya akışını al ve peer bağlantısına ekle (Buraya taşındı ve düzeltildi)
-            try {
+
+                const mutedIcon = document.createElement("span");
+                mutedIcon.className = "muted-icon";
+                mutedIcon.textContent = "🔇";
+                li.appendChild(mutedIcon);
+
+                const meter = document.createElement("span");
+                meter.className = "meter";
+                for (let i = 0; i < 3; i++) {
+                    const bar = document.createElement("span");
+                    bar.className = "bar";
+                    meter.appendChild(bar);
+                }
+                li.appendChild(meter);
+
+                return li;
+            }
+
+            function renderParticipantList() {
+                const list = document.getElementById("participantList");
+                list.innerHTML = "";
+                list.appendChild(buildParticipantRow("__self__", currentUsername, true, isMuted, "connected"));
+
+                for (const [connectionId, p] of participants.entries()) {
+                    const status = p.pc ? p.pc.connectionState : "pending";
+                    list.appendChild(buildParticipantRow(connectionId, p.username, false, p.muted, status));
+                }
+
+                document.getElementById("participantCount").textContent = `${participants.size + 1} kişi`;
+            }
+
+            function applyLevelToRow(connectionId, level) {
+                const row = document.querySelector(`.participant[data-connection-id="${CSS.escape(connectionId)}"]`);
+                if (!row) return;
+                const bars = row.querySelectorAll(".meter .bar");
+                const heights = [4, 8, 14];
+                bars.forEach((bar, i) => {
+                    const active = level > (i + 1) * 0.18;
+                    bar.style.height = active ? `${heights[i]}px` : "3px";
+                });
+                row.classList.toggle("speaking", level > 0.12);
+            }
+
+            function startLevelMeter(stream, connectionId) {
+                if (!sharedAudioCtx) {
+                    sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (sharedAudioCtx.state === "suspended") {
+                    sharedAudioCtx.resume().catch(() => {});
+                }
+
+                const source = sharedAudioCtx.createMediaStreamSource(stream);
+                const analyser = sharedAudioCtx.createAnalyser();
+                analyser.fftSize = 256;
+                analyser.smoothingTimeConstant = 0.6;
+                source.connect(analyser);
+                const data = new Uint8Array(analyser.frequencyBinCount);
+
+                (function tick() {
+                    analyser.getByteFrequencyData(data);
+                    const avg = data.reduce((a, b) => a + b, 0) / data.length;
+                    applyLevelToRow(connectionId, Math.min(1, avg / 60));
+                    requestAnimationFrame(tick);
+                })();
+            }
+
+            // ---------- Oda / WebRTC durumu ----------
+
+            function getOrCreateParticipant(connectionId, name) {
+                let p = participants.get(connectionId);
+                if (!p) {
+                    p = { username: name || "Katılımcı", pc: null, audioEl: null, muted: false };
+                    participants.set(connectionId, p);
+                } else if (name) {
+                    p.username = name;
+                }
+                return p;
+            }
+
+            // Her uzak katılımcı için AYRI bir RTCPeerConnection tutuyoruz (mesh topoloji).
+            // Eski koddaki tek global "peerConnection" değişkeni, 2. bir kişi bağlanmaya
+            // çalıştığında ilk bağlantının üzerine yazılıyor ve iki bağlantıyı da bozuyordu.
+            function createPeerConnectionFor(connectionId) {
+                const p = getOrCreateParticipant(connectionId);
+                if (p.pc) return p.pc;
+
+                const pc = new RTCPeerConnection(configuration);
+
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        connection.invoke("SendICECandidate", connectionId, JSON.stringify(event.candidate))
+                            .catch(err => console.error("ICE gönderim hatası:", err));
+                    }
+                };
+
+                pc.ontrack = (event) => {
+                    if (!p.audioEl) {
+                        const audioEl = document.createElement("audio");
+                        audioEl.autoplay = true;
+                        document.getElementById("remoteAudios").appendChild(audioEl);
+                        p.audioEl = audioEl;
+                    }
+                    if (p.audioEl.srcObject !== event.streams[0]) {
+                        p.audioEl.srcObject = event.streams[0];
+                    }
+                    startLevelMeter(event.streams[0], connectionId);
+                };
+
+                pc.onconnectionstatechange = () => renderParticipantList();
+
+                if (localStream) {
+                    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+                }
+
+                p.pc = pc;
+                renderParticipantList();
+                return pc;
+            }
+
+            async function ensureLocalStream() {
+                if (localStream) return localStream;
                 localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                document.getElementById("localAudio").srcObject = localStream;
-                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-                console.log("Local stream added to peer connection.");
-            } catch (err) {
-                console.error("Error accessing media devices for local stream:", err);
-                alert("Mikrofona erişim izni vermelisiniz.");
+                startLevelMeter(localStream, "__self__");
+                return localStream;
             }
-        };
 
-        // WebRTC için offer oluşturma (Güncellendi)
-        const createOffer = async () => { // Async yapıldı
-            try {
-                // peerConnection henüz yoksa veya null ise burada oluştur
-                if (!peerConnection) {
-                    await createPeerConnection();
+            async function callUser(connectionId) {
+                const pc = createPeerConnectionFor(connectionId);
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                await connection.invoke("SendOffer", connectionId, JSON.stringify(offer));
+            }
+
+            function teardownParticipant(connectionId) {
+                const p = participants.get(connectionId);
+                if (!p) return;
+                if (p.pc) p.pc.close();
+                if (p.audioEl) p.audioEl.remove();
+                participants.delete(connectionId);
+            }
+
+            // ---------- SignalR olayları ----------
+
+            connection.on("ExistingUsers", async (users) => {
+                try {
+                    await ensureLocalStream();
+                } catch (err) {
+                    console.error("Mikrofon erişim hatası:", err);
+                    alert("Odaya sesli katılmak için mikrofon erişimine izin vermelisin.");
+                    return;
                 }
-
-                const offer = await peerConnection.createOffer();
-                await peerConnection.setLocalDescription(offer);
-                console.log("Sending Offer:", peerConnection.localDescription);
-                // Offer'ı JSON string'ine çevirerek gönder
-                connection.invoke("SendOffer", currentUsername, JSON.stringify(peerConnection.localDescription))
-                    .catch(err => console.error("Error sending offer: ", err));
-            } catch (err) {
-                console.error("Error creating offer: ", err);
-            }
-        };
-
-        // WebRTC için answer oluşturma (Güncellendi)
-        const createAnswer = async (offer) => { // Async yapıldı
-            try {
-                // peerConnection henüz yoksa veya null ise burada oluştur
-                if (!peerConnection) {
-                    await createPeerConnection(); // Eğer offer geliyorsa ama bizim tarafımızda bağlantı yoksa oluştur.
+                for (const u of users) {
+                    getOrCreateParticipant(u.connectionId, u.username);
+                    await callUser(u.connectionId);
                 }
+                renderParticipantList();
+            });
 
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer);
-                console.log("Sending Answer:", peerConnection.localDescription);
-                // Answer'ı JSON string'ine çevirerek gönder
-                connection.invoke("SendAnswer", currentUsername, JSON.stringify(peerConnection.localDescription))
-                    .catch(err => console.error("Error sending answer: ", err));
-            } catch (err) {
-                console.error("Error creating answer: ", err);
-            }
-        };
+            connection.on("UserJoined", (connectionId, name) => {
+                getOrCreateParticipant(connectionId, name);
+                renderParticipantList();
+                appendSystemMessage(`${name} odaya katıldı.`);
+            });
 
-        // Mesaj gönderme fonksiyonu
-        function sendMessage() {
-            const message = document.getElementById("messageInput").value;
-            if (message.trim() === "") return;
-            connection.invoke("SendMessage", currentUsername, message) // @username yerine currentUsername kullanıldı
-                .catch(err => console.error("Error sending message: ", err));
-            document.getElementById("messageInput").value = "";
-        }
+            connection.on("ReceiveOffer", async (senderConnectionId, offerStr) => {
+                try {
+                    await ensureLocalStream();
+                } catch (err) {
+                    console.error("Mikrofon erişim hatası:", err);
+                    alert("Odaya sesli katılmak için mikrofon erişimine izin vermelisin.");
+                    return;
+                }
+                const offer = JSON.parse(offerStr);
+                const pc = createPeerConnectionFor(senderConnectionId);
+                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                await connection.invoke("SendAnswer", senderConnectionId, JSON.stringify(answer));
+            });
 
-        // Başlat butonuna tıklandığında sesli görüşmeyi başlatma
-        document.getElementById("startCallButton").addEventListener("click", async () => { // async yapıldı
-            try {
-                await createPeerConnection(); // Peer bağlantısını ve yerel akışı oluştur
-                await createOffer(); // Offer gönder
-                connection.invoke("StartVoiceCall", currentUsername).catch(err => console.error("SignalR StartVoiceCall Error:", err)); // SignalR'a bildir
-                document.getElementById("startCallButton").style.display = "none";
-                document.getElementById("endCallButton").style.display = "inline-block";
-            } catch (e) {
-                console.error("Failed to start call:", e);
-            }
-        });
+            connection.on("ReceiveAnswer", async (senderConnectionId, answerStr) => {
+                const p = participants.get(senderConnectionId);
+                if (!p || !p.pc) return;
+                await p.pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(answerStr)));
+            });
 
-        // Sonlandır butonuna tıklandığında sesli görüşmeyi sonlandırma
-        document.getElementById("endCallButton").addEventListener("click", () => {
-            connection.invoke("EndVoiceCall", currentUsername).catch(err => console.error("SignalR EndVoiceCall Error:", err)); // SignalR'a bildir
+            connection.on("ReceiveICECandidate", async (senderConnectionId, candidateStr) => {
+                const p = participants.get(senderConnectionId);
+                if (!p || !p.pc) return;
+                try {
+                    await p.pc.addIceCandidate(new RTCIceCandidate(JSON.parse(candidateStr)));
+                } catch (e) {
+                    console.error("ICE ekleme hatası:", e);
+                }
+            });
 
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
-                document.getElementById("localAudio").srcObject = null; // Audio elemanını temizle
-                localStream = null;
-            }
-            if (peerConnection) {
-                peerConnection.close();
-                peerConnection = null;
-                document.getElementById("remoteAudio").srcObject = null; // Uzak audio elemanını temizle
-            }
-            document.getElementById("startCallButton").style.display = "inline-block";
-            document.getElementById("endCallButton").style.display = "none";
-        });
+            connection.on("UserMuteChanged", (connectionId, muted) => {
+                const p = participants.get(connectionId);
+                if (p) {
+                    p.muted = muted;
+                    renderParticipantList();
+                }
+            });
 
-        // Bağlantıyı başlat
-        connection.start().then(function () {
-            console.log("SignalR bağlantısı başarılı!");
-            document.getElementById("connectionStatus").style.display = "block"; // Bağlantı başarılı olduğunda durumu göster
-        }).catch(function (err) {
-            console.error("SignalR Bağlantı Hatası:", err.toString());
-        });
+            connection.on("UserLeft", (connectionId, name) => {
+                teardownParticipant(connectionId);
+                renderParticipantList();
+                appendSystemMessage(`${name} odadan ayrıldı.`);
+            });
+
+            connection.on("ReceiveMessage", (user, message) => {
+                appendChatMessage(user, message);
+            });
+
+            // ---------- Kontroller ----------
+
+            document.getElementById("messageForm").addEventListener("submit", (e) => {
+                e.preventDefault();
+                const input = document.getElementById("messageInput");
+                const message = input.value.trim();
+                if (!message) return;
+                connection.invoke("SendMessage", message).catch(err => console.error("Mesaj gönderim hatası:", err));
+                input.value = "";
+            });
+
+            document.getElementById("muteButton").addEventListener("click", async () => {
+                try {
+                    await ensureLocalStream();
+                } catch (err) {
+                    alert("Mikrofona erişim izni vermelisin.");
+                    return;
+                }
+                isMuted = !isMuted;
+                localStream.getAudioTracks().forEach(track => track.enabled = !isMuted);
+                const btn = document.getElementById("muteButton");
+                btn.setAttribute("aria-pressed", String(isMuted));
+                btn.setAttribute("aria-label", isMuted ? "Mikrofonu aç" : "Mikrofonu kapat");
+                connection.invoke("ToggleMute", isMuted).catch(err => console.error("Mute bildirim hatası:", err));
+                renderParticipantList();
+            });
+
+            document.getElementById("leaveButton").addEventListener("click", () => {
+                window.location.href = "/Chat/Login";
+            });
+
+            window.addEventListener("beforeunload", () => {
+                if (localStream) {
+                    localStream.getTracks().forEach(track => track.stop());
+                }
+                participants.forEach(p => p.pc && p.pc.close());
+            });
+
+            // ---------- Başlangıç ----------
+
+            connection.start()
+                .then(() => {
+                    setStatus(true);
+                    return connection.invoke("JoinRoom", currentUsername);
+                })
+                .then(() => renderParticipantList())
+                .catch(err => {
+                    console.error("SignalR bağlantı hatası:", err);
+                    setStatus(false);
+                    appendSystemMessage("Bağlantı kurulamadı, sayfayı yenilemeyi dene.");
+                });
+
+            connection.onreconnecting(() => setStatus(false));
+
+            connection.onreconnected(() => {
+                // Reconnect sonrası SignalR yeni bir ConnectionId atar; eski peer
+                // bağlantıları artık sunucu tarafında anlamsız kaldığı için hepsini
+                // kapatıp odaya yeniden katılarak mesh'i sıfırdan kuruyoruz.
+                setStatus(true);
+                participants.forEach((p, id) => teardownParticipant(id));
+                connection.invoke("JoinRoom", currentUsername).then(() => renderParticipantList());
+            });
+
+            renderParticipantList();
+        })();
     </script>
 </body>
 </html>
