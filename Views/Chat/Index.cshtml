@@ -496,9 +496,89 @@
         @@media (prefers-reduced-motion: reduce) {
             * { animation: none !important; transition: none !important; }
         }
+        /* --- YENİ EKLENEN ODA İÇİ YOĞUN İPLİK STİLLERİ --- */
+.room-field {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.room-field svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.5;
+}
+
+.scan-line {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 1.5;
+}
+
+.scan-line.amber {
+    stroke: var(--amber);
+    opacity: 0.6;
+}
+
+.scan-room-1 { animation: drift-room-x 12s linear infinite; }
+.scan-room-2 { animation: drift-room-x 18s linear infinite reverse; }
+.scan-room-3 { animation: drift-room-x 15s linear infinite; }
+.scan-room-4 { animation: drift-room-x 22s linear infinite reverse; }
+.scan-room-5 { animation: drift-room-x 14s linear infinite; }
+
+.scan-room-hyper { 
+    stroke-width: 2;
+    stroke: var(--signal);
+    filter: drop-shadow(0 0 6px var(--signal));
+    opacity: 0.3;
+    animation: drift-hyper 6s ease-in-out infinite alternate; 
+}
+
+.room-grain {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.app {
+    position: relative;
+    z-index: 5; /* İçeriği ipliklerin önüne çıkarır */
+}
+
+@@keyframes drift-room-x {
+    0% { transform: translateX(-5%) translateY(-5px); }
+    50% { transform: translateX(5%) translateY(5px); }
+    100% { transform: translateX(-5%) translateY(-5px); }
+}
+
+@@keyframes drift-hyper {
+    0% { transform: scaleY(0.8) skewX(-3deg); opacity: 0.2; }
+    50% { transform: scaleY(1.2) skewX(3deg); opacity: 0.5; }
+    100% { transform: scaleY(0.9) skewX(-1deg); opacity: 0.3; }
+}
+/* ------------------------------------------------ */
     </style>
 </head>
 <body>
+    <div class="room-field" aria-hidden="true">
+        <svg viewBox="0 0 800 800" preserveAspectRatio="none">
+            <path class="scan-line scan-room-1" d="M -50 150 Q 200 80 400 150 T 850 150" />
+            <path class="scan-line scan-room-3" d="M -50 450 Q 200 390 400 450 T 850 450" />
+            <path class="scan-line scan-room-5" d="M -50 720 Q 200 660 400 720 T 850 720" />
+            <path class="scan-line scan-room-2 amber" d="M -50 300 Q 220 360 400 300 T 850 300" />
+            <path class="scan-line scan-room-4 amber" d="M -50 580 Q 250 500 400 580 T 850 580" />
+            <path class="scan-line scan-room-hyper" d="M -50 380 Q 200 220 400 380 T 850 380" />
+        </svg>
+    </div>
+    <div class="room-grain" aria-hidden="true"></div>
+
     <div class="app">
         <header class="topbar">
             <div class="brand-lockup">
