@@ -1,0 +1,218 @@
+@model IReadOnlyList<RevoApp.Models.Room>
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>REVO — Odalar</title>
+    <link rel="icon" type="image/png" href="~/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0B0E13;
+            --panel: #151A21;
+            --panel-2: #1C232C;
+            --panel-3: #222A34;
+            --border: #262E38;
+            --border-soft: #1e252e;
+            --text: #EDEBE6;
+            --text-dim: #8A93A3;
+            --text-faint: #545E6C;
+            --amber: #E3A857;
+            --amber-soft: rgba(227, 168, 87, 0.14);
+            --signal: #3ECFC0;
+            --signal-soft: rgba(62, 207, 192, 0.14);
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            min-height: 100%;
+            background:
+                radial-gradient(circle at 50% 0%, #151b24 0%, var(--bg) 45%),
+                var(--bg);
+            color: var(--text);
+            font-family: 'IBM Plex Sans', sans-serif;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        .wrap {
+            width: min(560px, 100%);
+            opacity: 0;
+            transform: translateY(10px);
+            animation: rise 0.5s cubic-bezier(.16,.8,.3,1) forwards;
+        }
+
+        @@keyframes rise {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-family: 'Big Shoulders Display', sans-serif;
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            margin: 0;
+            background: linear-gradient(180deg, var(--text) 0%, var(--amber) 160%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .back-link {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 12px;
+            color: var(--text-dim);
+            text-decoration: none;
+            padding: 8px 14px;
+            border: 1px solid var(--border-soft);
+            border-radius: 999px;
+            transition: border-color 0.2s ease, color 0.2s ease;
+        }
+
+        .back-link:hover {
+            border-color: var(--amber);
+            color: var(--amber);
+        }
+
+        .room-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            background: linear-gradient(180deg, var(--panel) 0%, #131820 100%);
+            border: 1px solid var(--border-soft);
+            border-radius: 14px;
+            opacity: 0;
+            transform: translateY(8px);
+            animation: row-rise 0.4s cubic-bezier(.16,.8,.3,1) forwards;
+            transition: border-color 0.2s ease, transform 0.15s ease;
+        }
+
+        @@keyframes row-rise {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .room-row:hover {
+            border-color: var(--border);
+            transform: translateY(-1px);
+        }
+
+        .room-row.permanent {
+            border-color: var(--signal-soft);
+            background: linear-gradient(180deg, rgba(62,207,192,0.06) 0%, var(--panel) 45%, #131820 100%);
+        }
+
+        .room-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .room-name {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .room-name .lock {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        .room-name .pin {
+            font-size: 11px;
+            color: var(--signal);
+        }
+
+        .room-count {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-top: 3px;
+        }
+
+        .join-link {
+            flex-shrink: 0;
+            padding: 9px 16px;
+            border-radius: 10px;
+            border: none;
+            background: var(--amber);
+            color: #241a0d;
+            font-weight: 700;
+            font-size: 13px;
+            text-decoration: none;
+            transition: filter 0.15s;
+        }
+
+        .join-link:hover { filter: brightness(1.08); }
+
+        .empty {
+            text-align: center;
+            color: var(--text-faint);
+            font-size: 13px;
+            padding: 30px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="header-row">
+            <h1>Aktif Odalar</h1>
+            <a class="back-link" asp-action="Login" asp-controller="Chat">← Girişe dön</a>
+        </div>
+
+        @if (!Model.Any())
+        {
+            <p class="empty">Şu an açık oda yok. İlk odayı sen kur.</p>
+        }
+        else
+        {
+            var index = 0;
+            foreach (var room in Model)
+            {
+                index++;
+                <div class="room-row @(room.IsPermanent ? "permanent" : "")" style="animation-delay: @(index * 0.05)s">
+                    <div class="room-info">
+                        <div class="room-name">
+                            @if (room.IsPermanent)
+                            {
+                                <span class="pin">📡</span>
+                            }
+                            <span>@room.Name</span>
+                            @if (room.HasPassword)
+                            {
+                                <span class="lock" title="Şifreli oda">🔒</span>
+                            }
+                        </div>
+                        <div class="room-count">@room.Users.Count kişi</div>
+                    </div>
+                    <a class="join-link" asp-action="Login" asp-controller="Chat" asp-route-roomCode="@room.Code">Katıl</a>
+                </div>
+            }
+        }
+    </div>
+</body>
+</html>

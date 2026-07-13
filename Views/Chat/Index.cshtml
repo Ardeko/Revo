@@ -169,6 +169,64 @@
             white-space: nowrap;
         }
 
+        .room-code-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px;
+            letter-spacing: 1.6px;
+            padding: 6px 8px 6px 12px;
+            border: 1px solid var(--border-soft);
+            border-radius: 999px;
+            background: rgba(21, 26, 33, 0.6);
+            white-space: nowrap;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .room-code-badge:hover {
+            border-color: var(--amber);
+            background: rgba(28, 35, 44, 0.85);
+        }
+
+        .room-code-badge .code {
+            color: var(--amber);
+            font-weight: 600;
+        }
+
+        .room-code-badge .copy-icon {
+            opacity: 0.55;
+            font-size: 12px;
+        }
+
+        .participant .kick-button {
+            flex-shrink: 0;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid var(--border-soft);
+            background: transparent;
+            color: var(--text-faint);
+            font-size: 11px;
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.15s ease, color 0.15s ease;
+        }
+
+        .participant .kick-button:hover {
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+
+        .participant .crown {
+            font-size: 11px;
+            opacity: 0.85;
+        }
+
         .room {
             flex: 1;
             display: grid;
@@ -589,6 +647,10 @@
                 <span class="status-dot-wrap"><span class="status-dot" id="statusDot"></span></span>
                 <span id="statusText">BAĞLANIYOR</span>
             </div>
+            <button type="button" class="room-code-badge" id="roomCodeBadge" title="Davet linkini kopyala">
+                <span class="code" id="roomCodeText">@ViewBag.RoomCode</span>
+                <span class="copy-icon">⧉</span>
+            </button>
             <div class="count" id="participantCount">1 kişi</div>
         </header>
 
@@ -634,6 +696,10 @@
             // (Eski koddaki "@@username" doğrudan gömme yöntemi, nick içinde tırnak veya
             // script kapatma etiketi gibi karakterler olursa sayfayı kırabiliyordu.)
             const currentUsername = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(username));
+            const currentRoomCode = @Html.Raw(System.Text.Json.JsonSerializer.Serialize((string)(ViewBag.RoomCode ?? "")));
+            // Şifre sadece Login -> Index redirect'i sırasında TempData'dan bir kerelik
+            // gelir. Sayfa yenilenirse (F5) null olur; o durumu "JoinError" ele alıyor.
+            const currentRoomPassword = @Html.Raw(System.Text.Json.JsonSerializer.Serialize((string?)ViewBag.RoomPassword));
 
             const configuration = {
                 iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -642,6 +708,7 @@
             let localStream = null;
             let isMuted = false;
             let sharedAudioCtx = null;
+            let isModerator = false;
 
             // connectionId -> { username, pc, audioEl, muted }
             const participants = new Map();
@@ -685,6 +752,14 @@
                 li.className = "participant" + (isYou ? " you" : "") + (muted ? " muted" : "");
                 li.dataset.connectionId = connectionId;
 
+                if (isYou && isModerator) {
+                    const crown = document.createElement("span");
+                    crown.className = "crown";
+                    crown.textContent = "👑";
+                    crown.title = "Bu odanın kurucususun";
+                    li.appendChild(crown);
+                }
+
                 const nameEl = document.createElement("span");
                 nameEl.className = "name";
                 nameEl.textContent = isYou ? `${name} (Sen)` : name;
@@ -711,6 +786,21 @@
                     meter.appendChild(bar);
                 }
                 li.appendChild(meter);
+
+                // Sadece odanın kurucusu, kendisi hariç herkesin yanında bir "at" butonu görür.
+                if (isModerator && !isYou) {
+                    const kickBtn = document.createElement("button");
+                    kickBtn.type = "button";
+                    kickBtn.className = "kick-button";
+                    kickBtn.title = `${name} kişisini odadan at`;
+                    kickBtn.textContent = "✕";
+                    kickBtn.addEventListener("click", () => {
+                        if (confirm(`${name} kişisini odadan atmak istediğine emin misin?`)) {
+                            connection.invoke("KickUser", connectionId).catch(err => console.error("Kick hatası:", err));
+                        }
+                    });
+                    li.appendChild(kickBtn);
+                }
 
                 return li;
             }
@@ -840,6 +930,21 @@
 
             // ---------- SignalR olayları ----------
 
+            connection.on("JoinedRoom", (roomCode, moderator) => {
+                isModerator = moderator;
+                renderParticipantList();
+            });
+
+            connection.on("JoinError", (reason) => {
+                alert(reason || "Odaya katılamadın.");
+                window.location.href = `/Chat/Login?roomCode=${encodeURIComponent(currentRoomCode)}`;
+            });
+
+            connection.on("KickedFromRoom", () => {
+                alert("Bu odadan çıkarıldın.");
+                window.location.href = "/Chat/Login";
+            });
+
             connection.on("ExistingUsers", async (users) => {
                 try {
                     await ensureLocalStream();
@@ -942,6 +1047,19 @@
                 window.location.href = "/Chat/Login";
             });
 
+            document.getElementById("roomCodeBadge").addEventListener("click", async () => {
+                const inviteUrl = `${window.location.origin}/Chat/Login?roomCode=${encodeURIComponent(currentRoomCode)}`;
+                try {
+                    await navigator.clipboard.writeText(inviteUrl);
+                    const badge = document.getElementById("roomCodeBadge");
+                    const original = badge.querySelector(".copy-icon").textContent;
+                    badge.querySelector(".copy-icon").textContent = "✓";
+                    setTimeout(() => { badge.querySelector(".copy-icon").textContent = original; }, 1200);
+                } catch (err) {
+                    console.error("Kopyalama hatası:", err);
+                }
+            });
+
             window.addEventListener("beforeunload", () => {
                 if (localStream) {
                     localStream.getTracks().forEach(track => track.stop());
@@ -954,7 +1072,7 @@
             connection.start()
                 .then(() => {
                     setStatus(true);
-                    return connection.invoke("JoinRoom", currentUsername);
+                    return connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword);
                 })
                 .then(() => renderParticipantList())
                 .catch(err => {
@@ -969,9 +1087,12 @@
                 // Reconnect sonrası SignalR yeni bir ConnectionId atar; eski peer
                 // bağlantıları artık sunucu tarafında anlamsız kaldığı için hepsini
                 // kapatıp odaya yeniden katılarak mesh'i sıfırdan kuruyoruz.
+                // Not: reconnect sırasında currentRoomPassword hâlâ bellekte olduğu için
+                // (sayfa yenilenmediyse) şifreli odalarda sorun çıkmaz.
                 setStatus(true);
                 participants.forEach((p, id) => teardownParticipant(id));
-                connection.invoke("JoinRoom", currentUsername).then(() => renderParticipantList());
+                connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword)
+                    .then(() => renderParticipantList());
             });
 
             renderParticipantList();

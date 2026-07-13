@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
+using RevoApp.Services;
 using System;
-using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -8,54 +8,98 @@ namespace RevoApp.Hubs
 {
     public class ChatHub : Hub
     {
-        // ConnectionId -> kullanıcı adı eşlemesi.
-        // Şu an tek paylaşımlı oda olduğu için tüm bağlantılar aynı sözlükte tutuluyor.
-        // İleride birden fazla bağımsız oda istenirse, bu sözlük oda adına göre
-        // ayrı sözlüklere (veya SignalR Groups'a) bölünebilir.
-        private static readonly ConcurrentDictionary<string, string> _users = new();
+        private readonly RoomManager _roomManager;
 
-        // İstemci SignalR bağlantısı kurulduktan hemen sonra bunu çağırır.
-        public async Task JoinRoom(string username)
+        public ChatHub(RoomManager roomManager)
         {
-            _users[Context.ConnectionId] = username;
+            _roomManager = roomManager;
+        }
+
+        // İstemci artık hangi odaya gireceğini de belirtiyor. Şifre kontrolü
+        // burada tekrar yapılıyor (Controller'daki kontrol sadece ilk yönlendirme
+        // için — biri linki doğrudan paylaşıp Controller'ı atlayabilir, bu yüzden
+        // gerçek erişim kontrolü Hub seviyesinde olmak zorunda).
+        public async Task JoinRoom(string roomCode, string username, string? password)
+        {
+            if (!_roomManager.TryGetRoom(roomCode, out var room) || room is null)
+            {
+                await Clients.Caller.SendAsync("JoinError", "Oda bulunamadı.");
+                return;
+            }
+
+            if (!_roomManager.ValidatePassword(room, password))
+            {
+                await Clients.Caller.SendAsync("JoinError", "Şifre hatalı.");
+                return;
+            }
+
+            await Groups.AddToGroupAsync(Context.ConnectionId, roomCode);
+            _roomManager.AddUser(room, Context.ConnectionId, username);
+
+            // Oda az önce kurulduysa (Controller'da CreatedByConnectionId henüz
+            // ConnectionId bilinmediği için boş bırakılmıştı) ilk katılan kişi
+            // otomatik olarak moderatör kabul edilir.
+            if (string.IsNullOrEmpty(room.CreatedByConnectionId))
+            {
+                room.CreatedByConnectionId = Context.ConnectionId;
+            }
+
+            var isModerator = room.CreatedByConnectionId == Context.ConnectionId;
 
             // Yeni katılana, kendisi hariç odada zaten bulunan herkesin listesini gönder.
             // WebRTC bağlantısını başlatma (offer gönderme) görevi HER ZAMAN yeni katılana
             // ait: böylece aynı çift için iki taraftan birden offer gönderilip
             // çakışması (glare) engellenmiş olur.
-            var existingUsers = _users
+            var existingUsers = room.Users
                 .Where(kvp => kvp.Key != Context.ConnectionId)
                 .Select(kvp => new { connectionId = kvp.Key, username = kvp.Value })
                 .ToList();
 
+            await Clients.Caller.SendAsync("JoinedRoom", roomCode, isModerator);
             await Clients.Caller.SendAsync("ExistingUsers", existingUsers);
 
             // Odadaki diğer herkese yeni katılımcıyı duyur (onlar bağlantı başlatmayacak,
             // sadece yeni kişinin offer'ını bekleyecekler).
-            await Clients.Others.SendAsync("UserJoined", Context.ConnectionId, username);
+            await Clients.OthersInGroup(roomCode).SendAsync("UserJoined", Context.ConnectionId, username);
         }
 
-        // Metin mesajı gönderimi (herkese). Kullanıcı adı istemciden değil,
-        // sunucunun tuttuğu bağlantı sözlüğünden okunur; böylece biri başka
-        // birinin adını taklit ederek mesaj gönderemez.
+        // Metin mesajı gönderimi — artık sadece çağıranın odasına gidiyor.
         public async Task SendMessage(string message)
         {
-            var username = _users.TryGetValue(Context.ConnectionId, out var name) ? name : "Bilinmeyen";
-            await Clients.All.SendAsync("ReceiveMessage", username, message);
+            var room = _roomManager.GetRoomForConnection(Context.ConnectionId);
+            if (room is null) return;
+
+            var username = room.Users.TryGetValue(Context.ConnectionId, out var name) ? name : "Bilinmeyen";
+            await Clients.Group(room.Code).SendAsync("ReceiveMessage", username, message);
         }
 
-        // Mikrofon aç/kapa durumunu odadaki diğerlerine bildir (UI'da göstermek için).
+        // Mikrofon aç/kapa durumunu SADECE aynı odadaki diğerlerine bildir.
         public async Task ToggleMute(bool isMuted)
         {
-            await Clients.Others.SendAsync("UserMuteChanged", Context.ConnectionId, isMuted);
+            var room = _roomManager.GetRoomForConnection(Context.ConnectionId);
+            if (room is null) return;
+
+            await Clients.OthersInGroup(room.Code).SendAsync("UserMuteChanged", Context.ConnectionId, isMuted);
         }
 
-        // --- WebRTC sinyalleşmesi ---
-        // ÖNEMLİ FARK: Bunlar artık Clients.All yerine SADECE hedef bağlantıya
-        // (targetConnectionId) gönderiliyor. Eskiden herkese broadcast edildiği için,
-        // 3. kişi odaya girdiğinde offer/answer/ICE mesajları birbirine karışıyor ve
-        // istemcideki tek bir "peerConnection" nesnesi aynı anda birden fazla kişiyle
-        // eşleşmeye çalışıyordu. Şimdi her mesaj yalnızca ilgili hedefe ulaşıyor.
+        // Odayı kuran kişi, istenmeyen bir kullanıcıyı odadan atabilir.
+        public async Task KickUser(string targetConnectionId)
+        {
+            var room = _roomManager.GetRoomForConnection(Context.ConnectionId);
+            if (room is null) return;
+
+            if (room.CreatedByConnectionId != Context.ConnectionId) return; // sadece kurucu atabilir
+
+            if (room.Users.TryGetValue(targetConnectionId, out var targetUsername))
+            {
+                await Clients.Client(targetConnectionId).SendAsync("KickedFromRoom");
+                await Groups.RemoveFromGroupAsync(targetConnectionId, room.Code);
+                room.Users.TryRemove(targetConnectionId, out _);
+                await Clients.Group(room.Code).SendAsync("UserLeft", targetConnectionId, targetUsername);
+            }
+        }
+
+        // --- WebRTC sinyalleşmesi (değişmedi — zaten hedefe özel gönderiliyordu) ---
 
         public async Task SendOffer(string targetConnectionId, string offer)
         {
@@ -72,15 +116,15 @@ namespace RevoApp.Hubs
             await Clients.Client(targetConnectionId).SendAsync("ReceiveICECandidate", Context.ConnectionId, candidate);
         }
 
-        // Kullanıcının bağlantısı koptuğunda (sekme kapatma, ağ kopması vb.)
-        // diğerlerine haber ver ki kendi taraflarındaki peer connection'ı kapatıp
-        // arayüzden temizleyebilsinler. Eskiden bu hiç yapılmıyordu; bu yüzden
-        // ayrılan kişiler "hayalet" bağlantı olarak kalabiliyordu.
+        // Kullanıcının bağlantısı koptuğunda diğerlerine haber ver ki kendi
+        // taraflarındaki peer connection'ı kapatıp arayüzden temizleyebilsinler.
+        // Oda boş kalırsa RoomManager odayı otomatik siler.
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            if (_users.TryRemove(Context.ConnectionId, out var username))
+            var (room, username, _) = _roomManager.RemoveUser(Context.ConnectionId);
+            if (room is not null && username is not null)
             {
-                await Clients.Others.SendAsync("UserLeft", Context.ConnectionId, username);
+                await Clients.OthersInGroup(room.Code).SendAsync("UserLeft", Context.ConnectionId, username);
             }
             await base.OnDisconnectedAsync(exception);
         }
