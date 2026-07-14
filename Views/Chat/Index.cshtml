@@ -350,6 +350,14 @@
             white-space: nowrap;
         }
 
+        .volume-slider {
+            width: 56px;
+            height: 3px;
+            flex-shrink: 0;
+            accent-color: var(--amber);
+            cursor: pointer;
+        }
+
         .chat-panel .messages {
             flex: 1;
             overflow-y: auto;
@@ -839,8 +847,7 @@
 
         <footer class="controls-wrap">
             <div class="mic-mode-row" id="micModeRow">
-                <button type="button" class="mode-pill active" data-mode="always">Sürekli Açık</button>
-                <button type="button" class="mode-pill" data-mode="vad">Otomatik Algılama</button>
+                <button type="button" class="mode-pill active" data-mode="always">Otomatik Algılama</button>
                 <button type="button" class="mode-pill" data-mode="ptt">Bas-Konuş</button>
                 <button type="button" class="ptt-key-button" id="pttKeyButton" title="Bas-Konuş tuşunu değiştir">Boşluk</button>
             </div>
@@ -919,17 +926,12 @@
             let screenStream = null;
             let isScreenSharing = false;
 
-            // ---------- Mikrofon modu: sürekli açık / otomatik algılama (VAD) / bas-konuş ----------
-            let micMode = "always"; // "always" | "vad" | "ptt"
-            let vadSpeaking = false;
-            let vadRafId = null;
+            // ---------- Mikrofon modu: otomatik algılama / bas-konuş ----------
+            let micMode = "always"; // "always" (buton yazısı "Otomatik Algılama") | "ptt"
             let pttActive = false;
             let pttKey = localStorage.getItem("revo_ptt_key") || "Space";
-            const VAD_LEVEL_THRESHOLD = 0.10; // 0-1 arası, meter ile aynı ölçek
-            const VAD_ATTACK_MS = 60;         // konuşma başlar başlamaz kanalı aç
-            const VAD_RELEASE_MS = 500;       // kelimeler arası kısa boşlukta kapanmasın
 
-            // connectionId -> { username, pc, audioEl, muted }
+            // connectionId -> { username, pc, audioEl, muted, volume }
             const participants = new Map();
 
             const connection = new signalR.HubConnectionBuilder()
@@ -1006,6 +1008,26 @@
                 }
                 li.appendChild(meter);
 
+                // Kendi mikrofonumuzun "gönderim" seviyesini ayarlamak anlamsız olduğu için
+                // ses düzeyi kaydırıcısı sadece uzak katılımcılarda gösterilir — bu tamamen
+                // yerel bir oynatma (playback) ayarıdır, karşı tarafa yansımaz.
+                if (!isYou) {
+                    const p = participants.get(connectionId);
+                    const volumeSlider = document.createElement("input");
+                    volumeSlider.type = "range";
+                    volumeSlider.className = "volume-slider";
+                    volumeSlider.min = "0";
+                    volumeSlider.max = "100";
+                    volumeSlider.step = "5";
+                    volumeSlider.value = String(Math.round((p ? p.volume : 1) * 100));
+                    volumeSlider.title = "Ses düzeyi";
+                    volumeSlider.setAttribute("aria-label", `${name} için ses düzeyi`);
+                    volumeSlider.addEventListener("input", () => {
+                        setParticipantVolume(connectionId, Number(volumeSlider.value) / 100);
+                    });
+                    li.appendChild(volumeSlider);
+                }
+
                 // Sadece odanın kurucusu, kendisi hariç herkesin yanında bir "at" butonu görür.
                 if (isModerator && !isYou) {
                     const kickBtn = document.createElement("button");
@@ -1077,12 +1099,21 @@
             function getOrCreateParticipant(connectionId, name) {
                 let p = participants.get(connectionId);
                 if (!p) {
-                    p = { username: name || "Katılımcı", pc: null, audioEl: null, muted: false };
+                    p = { username: name || "Katılımcı", pc: null, audioEl: null, muted: false, volume: 1 };
                     participants.set(connectionId, p);
                 } else if (name) {
                     p.username = name;
                 }
                 return p;
+            }
+
+            // Sadece o katılımcının bize gelen sesinin oynatma seviyesini değiştirir —
+            // karşı tarafa hiçbir şekilde bildirilmez, tamamen yerel bir ayardır.
+            function setParticipantVolume(connectionId, volume) {
+                const p = participants.get(connectionId);
+                if (!p) return;
+                p.volume = volume;
+                if (p.audioEl) p.audioEl.volume = volume;
             }
 
             // Her uzak katılımcı için AYRI bir RTCPeerConnection tutuyoruz (mesh topoloji).
@@ -1109,6 +1140,7 @@
                     if (!p.audioEl) {
                         const audioEl = document.createElement("audio");
                         audioEl.autoplay = true;
+                        audioEl.volume = p.volume;
                         document.getElementById("remoteAudios").appendChild(audioEl);
                         p.audioEl = audioEl;
                     }
@@ -1148,7 +1180,7 @@
 
             // Mikrofonun o an gerçekten ses gönderip göndermeyeceğine tek bir yerden karar verir.
             // Öncelik sırası: manuel tam susturma (isMuted) her zaman kazanır; sonra mod
-            // (sürekli açık / VAD / bas-konuş) devreye girer. WebRTC'de track.enabled = false
+            // (otomatik algılama / bas-konuş) devreye girer. WebRTC'de track.enabled = false
             // olduğunda sessizlik gönderilir (bağlantı kopmaz), bu yüzden karşı taraftaki
             // seviye göstergesi de otomatik olarak "konuşmuyor" görünür — ekstra sinyalleşmeye
             // gerek kalmadan.
@@ -1158,8 +1190,6 @@
                 let shouldTransmit;
                 if (isMuted) {
                     shouldTransmit = false;
-                } else if (micMode === "vad") {
-                    shouldTransmit = vadSpeaking;
                 } else if (micMode === "ptt") {
                     shouldTransmit = pttActive;
                 } else {
@@ -1179,52 +1209,6 @@
                     indicator.textContent = shouldTransmit ? "● aktarılıyor" : "beklemede";
                     indicator.className = "tx-indicator" + (shouldTransmit ? " on" : " gated");
                 }
-            }
-
-            // Ayrı, kendi AnalyserNode'una sahip hafif bir konuşma algılama döngüsü.
-            // Görsel seviye göstergesinden (startLevelMeter) bağımsız çalışır ki saldırma/
-            // bırakma (attack/release) zamanlamasını VAD'a özel ayarlayabilelim.
-            function startVadMonitor(stream) {
-                if (vadRafId) cancelAnimationFrame(vadRafId);
-
-                if (!sharedAudioCtx) {
-                    sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                }
-
-                const source = sharedAudioCtx.createMediaStreamSource(stream);
-                const analyser = sharedAudioCtx.createAnalyser();
-                analyser.fftSize = 512;
-                analyser.smoothingTimeConstant = 0.15;
-                source.connect(analyser);
-                const data = new Uint8Array(analyser.frequencyBinCount);
-
-                let aboveSince = null;
-                let belowSince = null;
-
-                (function tick() {
-                    analyser.getByteFrequencyData(data);
-                    const avg = data.reduce((a, b) => a + b, 0) / data.length;
-                    const level = Math.min(1, avg / 60);
-                    const now = performance.now();
-
-                    if (level > VAD_LEVEL_THRESHOLD) {
-                        belowSince = null;
-                        if (aboveSince === null) aboveSince = now;
-                        if (!vadSpeaking && now - aboveSince >= VAD_ATTACK_MS) {
-                            vadSpeaking = true;
-                            if (micMode === "vad") updateEffectiveMicState();
-                        }
-                    } else {
-                        aboveSince = null;
-                        if (belowSince === null) belowSince = now;
-                        if (vadSpeaking && now - belowSince >= VAD_RELEASE_MS) {
-                            vadSpeaking = false;
-                            if (micMode === "vad") updateEffectiveMicState();
-                        }
-                    }
-
-                    vadRafId = requestAnimationFrame(tick);
-                })();
             }
 
             function setMicMode(mode) {
@@ -1261,7 +1245,6 @@
                 }
 
                 startLevelMeter(localStream, "__self__");
-                startVadMonitor(localStream);
                 updateEffectiveMicState();
                 return localStream;
             }
@@ -1277,7 +1260,6 @@
                 const newTrack = targetStream.getAudioTracks()[0];
                 localStream = targetStream;
                 updateEffectiveMicState(); // track.enabled'ı isMuted/mod durumuna göre doğru ayarlar
-                startVadMonitor(localStream); // VAD algılamasını yeni aktif stream'e bağla
 
                 for (const p of participants.values()) {
                     if (!p.pc) continue;
@@ -1646,9 +1628,6 @@
             });
 
             window.addEventListener("beforeunload", () => {
-                if (vadRafId) {
-                    cancelAnimationFrame(vadRafId);
-                }
                 if (rawStream) {
                     rawStream.getTracks().forEach(track => track.stop());
                 }
