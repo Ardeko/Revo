@@ -1,0 +1,33 @@
+*, *:hover, *:active, *:focus {
+  cursor: none !important;
+}
+:root {
+  --revo-cursor-primary: #22d3ee;
+  --revo-cursor-secondary: #a78bfa;
+}
+
+body.revo-cursor-active,
+body.revo-cursor-active * {
+  cursor: none !important;
+}
+
+body.revo-cursor-active iframe,
+body.revo-cursor-active input,
+body.revo-cursor-active textarea,
+body.revo-cursor-active select,
+body.revo-cursor-active button,
+body.revo-cursor-active a {
+  cursor: none !important;
+}
+
+#revo-cursor-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 2147483647;
+  opacity: 1;
+  transition: opacity 0.25s ease;
+}
