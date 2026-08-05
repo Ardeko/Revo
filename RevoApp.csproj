@@ -10,7 +10,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.SignalR" Version="1.2.0" />
+<<<<<<< HEAD
     <PackageReference Include="Photino.NET" Version="3.*" />
+=======
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
+>>>>>>> 76b24f0ea3375f1aef4ffee6cff88ce6c9fea87f
   </ItemGroup>
 
 </Project>
