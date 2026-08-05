@@ -4,11 +4,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- exe olarak açılınca arkada siyah bir konsol penceresi belirmesin diye. -->
+    <OutputType>WinExe</OutputType>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.SignalR" Version="1.2.0" />
-    <PackageReference Include="SocketIOSharp" Version="2.0.3" />
+    <PackageReference Include="Photino.NET" Version="3.*" />
   </ItemGroup>
 
 </Project>

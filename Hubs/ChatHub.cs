@@ -19,7 +19,7 @@ namespace RevoApp.Hubs
         // burada tekrar yapılıyor (Controller'daki kontrol sadece ilk yönlendirme
         // için — biri linki doğrudan paylaşıp Controller'ı atlayabilir, bu yüzden
         // gerçek erişim kontrolü Hub seviyesinde olmak zorunda).
-        public async Task JoinRoom(string roomCode, string username, string? password)
+        public async Task JoinRoom(string roomCode, string username, string? password, string? avatarUrl)
         {
             if (!_roomManager.TryGetRoom(roomCode, out var room) || room is null)
             {
@@ -34,7 +34,7 @@ namespace RevoApp.Hubs
             }
 
             await Groups.AddToGroupAsync(Context.ConnectionId, roomCode);
-            _roomManager.AddUser(room, Context.ConnectionId, username);
+            _roomManager.AddUser(room, Context.ConnectionId, username, avatarUrl);
 
             // Oda az önce kurulduysa (Controller'da CreatedByConnectionId henüz
             // ConnectionId bilinmediği için boş bırakılmıştı) ilk katılan kişi
@@ -52,15 +52,34 @@ namespace RevoApp.Hubs
             // çakışması (glare) engellenmiş olur.
             var existingUsers = room.Users
                 .Where(kvp => kvp.Key != Context.ConnectionId)
-                .Select(kvp => new { connectionId = kvp.Key, username = kvp.Value })
+                .Select(kvp => new { connectionId = kvp.Key, username = kvp.Value.Username, avatarUrl = kvp.Value.AvatarUrl })
                 .ToList();
 
             await Clients.Caller.SendAsync("JoinedRoom", roomCode, isModerator);
             await Clients.Caller.SendAsync("ExistingUsers", existingUsers);
+            // Oda rayının ilk açılışta boş kalmaması için güncel listeyi de yolla;
+            // sonraki değişiklikler zaten RoomManager'dan herkese otomatik gidiyor.
+            await Clients.Caller.SendAsync("RoomListChanged", _roomManager.GetActiveRoomsSummary());
 
             // Odadaki diğer herkese yeni katılımcıyı duyur (onlar bağlantı başlatmayacak,
             // sadece yeni kişinin offer'ını bekleyecekler).
-            await Clients.OthersInGroup(roomCode).SendAsync("UserJoined", Context.ConnectionId, username);
+            await Clients.OthersInGroup(roomCode).SendAsync("UserJoined", Context.ConnectionId, username, avatarUrl);
+        }
+
+        // Kullanıcı bağlantıyı koparmadan başka bir odaya geçmek istediğinde
+        // çağrılır (oda rayından tıklayınca). Hemen ardından aynı bağlantı
+        // üzerinden JoinRoom çağrılacağı için burada sadece eski odadan
+        // temiz bir çıkış yapıyoruz.
+        public async Task LeaveRoom()
+        {
+            var (room, username, _) = _roomManager.RemoveUser(Context.ConnectionId);
+            if (room is null) return;
+
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, room.Code);
+            if (username is not null)
+            {
+                await Clients.OthersInGroup(room.Code).SendAsync("UserLeft", Context.ConnectionId, username);
+            }
         }
 
         // Metin mesajı gönderimi — artık sadece çağıranın odasına gidiyor.
@@ -69,8 +88,10 @@ namespace RevoApp.Hubs
             var room = _roomManager.GetRoomForConnection(Context.ConnectionId);
             if (room is null) return;
 
-            var username = room.Users.TryGetValue(Context.ConnectionId, out var name) ? name : "Bilinmeyen";
-            await Clients.Group(room.Code).SendAsync("ReceiveMessage", username, message);
+            var username = room.Users.TryGetValue(Context.ConnectionId, out var participant) ? participant.Username : "Bilinmeyen";
+            // connectionId'yi de yolluyoruz ki istemci avatarı her mesajda yeniden
+            // göndermeden, zaten önbelleğe aldığı katılımcı listesinden çözebilsin.
+            await Clients.Group(room.Code).SendAsync("ReceiveMessage", Context.ConnectionId, username, message);
         }
 
         // Mikrofon aç/kapa durumunu SADECE aynı odadaki diğerlerine bildir.
@@ -90,12 +111,12 @@ namespace RevoApp.Hubs
 
             if (room.CreatedByConnectionId != Context.ConnectionId) return; // sadece kurucu atabilir
 
-            if (room.Users.TryGetValue(targetConnectionId, out var targetUsername))
+            if (room.Users.TryGetValue(targetConnectionId, out var targetParticipant))
             {
                 await Clients.Client(targetConnectionId).SendAsync("KickedFromRoom");
                 await Groups.RemoveFromGroupAsync(targetConnectionId, room.Code);
                 room.Users.TryRemove(targetConnectionId, out _);
-                await Clients.Group(room.Code).SendAsync("UserLeft", targetConnectionId, targetUsername);
+                await Clients.Group(room.Code).SendAsync("UserLeft", targetConnectionId, targetParticipant.Username);
             }
         }
 
