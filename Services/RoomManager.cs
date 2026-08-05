@@ -3,7 +3,9 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.SignalR;
 using RevoApp.Helpers;
+using RevoApp.Hubs;
 using RevoApp.Models;
 
 namespace RevoApp.Services
@@ -17,6 +19,7 @@ namespace RevoApp.Services
     public class RoomManager
     {
         private readonly ConcurrentDictionary<string, Room> _rooms = new();
+        private readonly IHubContext<ChatHub> _hubContext;
 
         // Herkese açık, her zaman var olan sabit oda. Kod olarak kullanıcı
         // dostu, çakışma ihtimali olmayan bir değer seçildi.
@@ -25,8 +28,9 @@ namespace RevoApp.Services
         private static readonly char[] CodeAlphabet =
             "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".ToCharArray(); // karışabilecek 0/O, 1/I çıkarıldı
 
-        public RoomManager()
+        public RoomManager(IHubContext<ChatHub> hubContext)
         {
+            _hubContext = hubContext;
             EnsurePublicRoomExists();
         }
 
@@ -58,6 +62,7 @@ namespace RevoApp.Services
             };
 
             _rooms[code] = room;
+            NotifyRoomsChanged();
             return room;
         }
 
@@ -71,9 +76,26 @@ namespace RevoApp.Services
         }
 
         // Kullanıcı bir odaya eklenirken çağrılır (Hub tarafından JoinRoom içinde).
-        public void AddUser(Room room, string connectionId, string username)
+        public void AddUser(Room room, string connectionId, string username, string? avatarUrl = null)
         {
-            room.Users[connectionId] = username;
+            room.Users[connectionId] = new Participant(username, avatarUrl);
+            NotifyRoomsChanged();
+        }
+
+        // Oda rayında (room rail) göstermek için sade, sadece gerekli alanları
+        // içeren bir özet — Room nesnesinin tamamını istemciye yollamıyoruz.
+        public IReadOnlyList<object> GetActiveRoomsSummary()
+        {
+            return GetActiveRooms()
+                .Select(r => (object)new
+                {
+                    code = r.Code,
+                    name = r.Name,
+                    userCount = r.Users.Count,
+                    hasPassword = r.HasPassword,
+                    isPermanent = r.IsPermanent
+                })
+                .ToList();
         }
 
         // Aktif odaları listelemek için (Oda Listesi sayfasında kullanılır).
@@ -95,7 +117,7 @@ namespace RevoApp.Services
             foreach (var kvp in _rooms)
             {
                 var room = kvp.Value;
-                if (room.Users.TryRemove(connectionId, out var username))
+                if (room.Users.TryRemove(connectionId, out var participant))
                 {
                     var deleted = false;
                     if (room.Users.IsEmpty && !room.IsPermanent)
@@ -103,7 +125,8 @@ namespace RevoApp.Services
                         _rooms.TryRemove(room.Code, out _);
                         deleted = true;
                     }
-                    return (room, username, deleted);
+                    NotifyRoomsChanged();
+                    return (room, participant.Username, deleted);
                 }
             }
             return (null, null, false);
@@ -120,6 +143,14 @@ namespace RevoApp.Services
         }
 
         private static string NormalizeCode(string code) => code.Trim().ToUpperInvariant();
+
+        // Oda listesi (kurulma/dağılma/katılım/ayrılma) her değiştiğinde tüm
+        // bağlı istemcilere güncel özeti yollar — oda rayının canlı kalması
+        // için istemcinin ayrıca "yenile" isteği atmasına gerek kalmaz.
+        private void NotifyRoomsChanged()
+        {
+            _ = _hubContext.Clients.All.SendAsync("RoomListChanged", GetActiveRoomsSummary());
+        }
 
         private static string GenerateCode(int length = 6)
         {
