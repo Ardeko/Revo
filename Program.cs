@@ -1,11 +1,15 @@
 using System.Drawing;
+<<<<<<< HEAD
 using System.Runtime.InteropServices;
 using System.Threading;
+=======
+>>>>>>> 388177094b16fda2e82046106257e98ea04a2b57
 using Microsoft.AspNetCore.SignalR;
 using Photino.NET;
 using RevoApp.Hubs;
 using RevoApp.Services;
 
+<<<<<<< HEAD
 // OutputType=WinExe konsolu tamamen gizliyor — bu sadece bizim
 // Console.WriteLine'larımızı değil, Photino'nun kendi dahili loglamasını da
 // (varsayılan LogVerbosity=2, kendi içinde Console.WriteLine kullanıyor) ve
@@ -24,21 +28,35 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews(); // MVC Controller'lar için gerekli servis
 // Varsayılan mesaj boyutu limiti (32KB), JoinRoom'a gömülen base64 profil
 // resmi için dar olabiliyor; küçük bir pay ile yükseltiyoruz.
+=======
+// SUNUCUNUN wwwroot KLASÖRÜNÜ KESİN OLARAK EXE'NİN YANINDA ARAMASINI SAĞLIYORUZ
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot")
+});
+
+builder.Services.AddControllersWithViews(); 
+>>>>>>> 388177094b16fda2e82046106257e98ea04a2b57
 builder.Services.AddSignalR(options =>
 {
     options.MaximumReceiveMessageSize = 128 * 1024;
 });
 
-// Odaları tutan servis — tekil (Singleton) olmalı çünkü tüm bağlantılar
-// aynı oda listesini paylaşmak zorunda.
 builder.Services.AddSingleton<RoomManager>();
 
+<<<<<<< HEAD
 // Masaüstü modu (varsayılan): exe çift tıklanınca Kestrel arka planda, sabit
 // yerel bir portta dinler; Photino penceresi doğrudan o adrese bakar.
 // "--web" argümanıyla çalıştırılırsa (ör. bir sunucuya deploy ederken) eski
 // tarayıcı tabanlı davranışa döner ve rastgele/atanan porttan dinler.
 const string desktopUrl = "http://127.0.0.1:57841";
 var isDesktop = !args.Contains("--web");
+=======
+const string desktopUrl = "http://localhost:57841";
+var isDesktop = !args.Contains("--web");
+
+>>>>>>> 388177094b16fda2e82046106257e98ea04a2b57
 if (isDesktop)
 {
     builder.WebHost.UseUrls(desktopUrl);
@@ -46,28 +64,21 @@ if (isDesktop)
 
 var app = builder.Build();
 
-// Statik dosyaları (css, js, img) sunmak için gerekli ayar
 app.UseStaticFiles();
-
-// Routing ayarlarını yapalım (Sayfa yönlendirme)
 app.UseRouting();
 
-// /oda/ABC123 gibi davet linkleri Login sayfasını, oda kodu önceden
-// dolu şekilde açsın diye ayrı bir route. "default" route'undan ÖNCE
-// tanımlanmalı, aksi halde eşleşmeden önce default kuralı devreye girer.
 app.MapControllerRoute(
     name: "room",
     pattern: "oda/{roomCode}",
     defaults: new { controller = "Chat", action = "Login" });
 
-// Controller Route ayarları
 app.MapControllerRoute(
     name: "default",
-    pattern: "{controller=Chat}/{action=Login}");  // Ana sayfanın yönlendirilmesi
+    pattern: "{controller=Chat}/{action=Login}"); 
 
-// SignalR hub'ını burada tanımlıyoruz
 app.MapHub<ChatHub>("/chatHub");
 
+<<<<<<< HEAD
 // Custom title bar'ı native olarak sürüklemek için kullanılan Win32 sabitleri.
 // Kullanılmadan önce (window oluşturulmadan önce) tanımlanmış olmaları
 // gerekiyor — top-level statements dosyasında yerel değişkenler/sabitler,
@@ -230,3 +241,23 @@ static extern bool ReleaseCapture();
 
 [DllImport("user32.dll", CharSet = CharSet.Unicode)]
 static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+=======
+if (isDesktop)
+{
+    _ = Task.Run(() => app.Run());
+    Thread.Sleep(500); 
+
+    var window = new PhotinoWindow()
+        .SetTitle("REVO")
+        .SetUseOsDefaultSize(false)
+        .SetSize(new Size(1320, 860))
+        .SetDevToolsEnabled(true) 
+        .Load(new Uri(desktopUrl));
+
+    window.WaitForClose();
+}
+else
+{
+    app.Run();
+}
+>>>>>>> 388177094b16fda2e82046106257e98ea04a2b57
