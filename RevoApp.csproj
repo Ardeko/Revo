@@ -4,11 +4,16 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- exe olarak açılınca arkada siyah bir konsol penceresi belirmesin diye. -->
+    <OutputType>WinExe</OutputType>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.SignalR" Version="1.2.0" />
-    <PackageReference Include="SocketIOSharp" Version="2.0.3" />
+    <!-- Microsoft.AspNetCore.SignalR .NET 10 paylaşılan çatısına (shared framework)
+         dahil geldi, ayrı pakete gerek yok — NU1510 uyarısının nedeni buydu.
+         Photino.NET'in gerçek GitHub etiketlerinden doğrulanmış son sürümü v4.0.16 —
+         3.* değil 4.* olması gerekiyordu. Photino.Native bağımlılığı otomatik gelir. -->
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
   </ItemGroup>
 
 </Project>

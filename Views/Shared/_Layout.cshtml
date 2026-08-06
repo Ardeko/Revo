@@ -8,8 +8,29 @@
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/RevoApp.styles.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/cursor.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/titlebar.css" asp-append-version="true" />
 </head>
-<body>
+<body class="revo-with-titlebar">
+    <div class="revo-titlebar">
+        <div class="revo-titlebar__drag">
+            <span class="revo-titlebar__logo" aria-hidden="true"></span>
+            <span class="revo-titlebar__title">REVO</span>
+        </div>
+        <div class="revo-titlebar__controls">
+            <button type="button" class="revo-titlebar__btn revo-titlebar__btn--minimize" aria-label="Küçült">
+                <svg viewBox="0 0 12 12"><rect x="1" y="5.5" width="10" height="1" fill="currentColor" /></svg>
+            </button>
+            <button type="button" class="revo-titlebar__btn revo-titlebar__btn--maximize" aria-label="Büyüt / Geri Yükle">
+                <svg viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1" /></svg>
+            </button>
+            <button type="button" class="revo-titlebar__btn revo-titlebar__btn--close" aria-label="Kapat">
+                <svg viewBox="0 0 12 12">
+                    <line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1.2" />
+                    <line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1.2" />
+                </svg>
+            </button>
+        </div>
+    </div>
     <header>
         <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
             <div class="container-fluid">
@@ -46,6 +67,7 @@
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
     <script src="~/js/cursor.js" asp-append-version="true"></script>
+    <script src="~/js/titlebar.js" asp-append-version="true"></script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

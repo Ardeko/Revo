@@ -30,8 +30,9 @@ namespace RevoApp.Models
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-        // ConnectionId -> kullanıcı adı. Oda bazlı olduğu için artık
-        // ChatHub'daki eski global sözlüğün yerini bu alıyor.
-        public ConcurrentDictionary<string, string> Users { get; } = new();
+        // ConnectionId -> katılımcı (kullanıcı adı + varsa profil resmi).
+        // Oda bazlı olduğu için artık ChatHub'daki eski global sözlüğün
+        // yerini bu alıyor.
+        public ConcurrentDictionary<string, Participant> Users { get; } = new();
     }
 }

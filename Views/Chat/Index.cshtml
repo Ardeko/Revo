@@ -228,13 +228,127 @@
             opacity: 0.85;
         }
 
+        .avatar {
+            flex-shrink: 0;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            color: #10141A;
+            object-fit: cover;
+        }
+
         .room {
             flex: 1;
             display: grid;
-            grid-template-columns: 232px 1fr;
+            grid-template-columns: 64px 232px 1fr;
             gap: 14px;
             padding: 14px;
             min-height: 0;
+        }
+
+        /* ---------- Oda rayı (Discord'un sunucu listesine benzer:
+           tıklayınca sayfa yenilemeden başka bir odaya geçilir) ---------- */
+
+        .room-rail {
+            width: 64px;
+            padding: 12px 8px;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .room-rail-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+            align-items: center;
+            overflow-y: auto;
+        }
+
+        .room-icon {
+            position: relative;
+            flex-shrink: 0;
+            width: 44px;
+            height: 44px;
+            border-radius: 16px;
+            border: 1px solid var(--border-soft);
+            background: var(--panel-2);
+            color: var(--text);
+            font-family: 'Big Shoulders Display', sans-serif;
+            font-weight: 700;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: border-radius 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+        }
+
+        .room-icon:hover {
+            border-radius: 12px;
+            transform: translateY(-1px);
+        }
+
+        .room-icon.active {
+            border-radius: 12px;
+            box-shadow: 0 0 0 2px var(--amber);
+        }
+
+        .room-icon .room-icon-badge {
+            position: absolute;
+            bottom: -4px;
+            right: -4px;
+            min-width: 15px;
+            height: 15px;
+            padding: 0 3px;
+            border-radius: 999px;
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 9px;
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .room-icon .room-icon-lock {
+            position: absolute;
+            top: -3px;
+            right: -3px;
+            font-size: 9px;
+            filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6));
+        }
+
+        .room-rail-add {
+            flex-shrink: 0;
+            width: 44px;
+            height: 44px;
+            border-radius: 16px;
+            border: 1.5px dashed var(--border);
+            background: transparent;
+            color: var(--text-faint);
+            font-size: 20px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            text-decoration: none;
+            transition: border-radius 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+        }
+
+        .room-rail-add:hover {
+            border-radius: 12px;
+            border-color: var(--signal);
+            color: var(--signal);
+            border-style: solid;
         }
 
         .panel {
@@ -383,6 +497,14 @@
             margin-right: 4px;
         }
 
+        .message .avatar {
+            width: 18px;
+            height: 18px;
+            font-size: 9px;
+            margin-right: 6px;
+            vertical-align: -4px;
+        }
+
         .message.system {
             color: var(--text-faint);
             font-style: italic;
@@ -509,6 +631,29 @@
             justify-content: center;
             gap: 18px;
             position: relative;
+        }
+
+        .self-chip {
+            position: absolute;
+            left: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px 6px 6px;
+            border: 1px solid var(--border-soft);
+            border-radius: 999px;
+            background: rgba(21, 26, 33, 0.6);
+        }
+
+        .self-chip-name {
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--text);
+            max-width: 110px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .mic-button {
@@ -698,7 +843,18 @@
         @@media (max-width: 640px) {
             .room {
                 grid-template-columns: 1fr;
-                grid-template-rows: auto 1fr;
+                grid-template-rows: auto auto 1fr;
+            }
+
+            .room-rail {
+                width: 100%;
+                padding: 8px 10px;
+            }
+
+            .room-rail-list {
+                flex-direction: row;
+                overflow-x: auto;
+                overflow-y: hidden;
             }
 
             .participants-panel {
@@ -717,6 +873,11 @@
             .credit {
                 position: static;
                 margin-top: 10px;
+            }
+
+            .self-chip {
+                position: static;
+                margin: 0 auto 8px;
             }
 
             .controls {
@@ -828,6 +989,11 @@
         </header>
 
         <main class="room">
+            <aside class="panel room-rail" id="roomRail">
+                <div class="room-rail-list" id="roomRailList"></div>
+                <a class="room-rail-add" href="/Chat/Login" title="Yeni oda kur / başka odaya katıl">+</a>
+            </aside>
+
             <section class="panel participants-panel">
                 <h2 class="panel-title">Frekansta</h2>
                 <ul class="participant-list" id="participantList"></ul>
@@ -854,6 +1020,9 @@
             </div>
 
             <div class="controls">
+                <div class="self-chip" id="selfChip">
+                    <span class="self-chip-name" id="selfChipName"></span>
+                </div>
                 <button id="muteButton" class="mic-button" type="button" aria-pressed="false" aria-label="Mikrofonu kapat">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
@@ -905,10 +1074,14 @@
             // (Eski koddaki "@@username" doğrudan gömme yöntemi, nick içinde tırnak veya
             // script kapatma etiketi gibi karakterler olursa sayfayı kırabiliyordu.)
             const currentUsername = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(username));
-            const currentRoomCode = @Html.Raw(System.Text.Json.JsonSerializer.Serialize((string)(ViewBag.RoomCode ?? "")));
+            let currentRoomCode = @Html.Raw(System.Text.Json.JsonSerializer.Serialize((string)(ViewBag.RoomCode ?? "")));
             // Şifre sadece Login -> Index redirect'i sırasında TempData'dan bir kerelik
             // gelir. Sayfa yenilenirse (F5) null olur; o durumu "JoinError" ele alıyor.
             const currentRoomPassword = @Html.Raw(System.Text.Json.JsonSerializer.Serialize((string?)ViewBag.RoomPassword));
+            // Login sayfasında seçilip sessionStorage'a yazılmış profil resmi (varsa).
+            // Sunucuya URL/TempData üzerinden değil, doğrudan JoinRoom çağrısıyla taşınıyor
+            // (görsel veri URL'e ya da TempData'nın çerez tabanlı deposuna sığmayabilir).
+            const currentAvatarUrl = sessionStorage.getItem("revoAvatar") || null;
 
             const configuration = {
                 iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -924,6 +1097,10 @@
             let sharedAudioCtx = null;
             let isModerator = false;
 
+            // Oda rayından başka bir odaya geçerken kullanılan geçici durum.
+            let isSwitchingRoom = false;
+            let roomBeforeSwitch = null;
+
             // ---------- Ekran paylaşımı ----------
             let screenStream = null;
             let isScreenSharing = false;
@@ -935,6 +1112,11 @@
 
             // connectionId -> { username, pc, audioEl, muted, volume }
             const participants = new Map();
+
+            // Alt kontrol çubuğundaki "kendi" rozeti (Discord'un sol alt kullanıcı
+            // paneline benzer) — bir kere, sayfa açılışında dolduruluyor.
+            document.getElementById("selfChip").prepend(buildAvatar(currentUsername, currentAvatarUrl));
+            document.getElementById("selfChipName").textContent = currentUsername;
 
             const connection = new signalR.HubConnectionBuilder()
                 .withUrl("/chatHub")
@@ -948,6 +1130,34 @@
                 document.getElementById("statusText").textContent = connected ? "SİNYAL VAR" : "BAĞLANIYOR";
             }
 
+            // İsimden sabit bir renk + baş harf üretir (fotoğraf yükleme olmadan
+            // önce geçici, ileride gerçek profil fotoğrafı eklenirse onun
+            // "fallback"ı olarak da kullanılabilir).
+            const AVATAR_PALETTE = ["#8FA6C9", "#C98F9E", "#9EC98F", "#C9AE8F", "#A98FC9", "#8FC9BE", "#C98FB0", "#B0C98F"];
+
+            function avatarColor(name) {
+                let hash = 0;
+                for (let i = 0; i < name.length; i++) {
+                    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+                }
+                return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+            }
+
+            function buildAvatar(name, avatarUrl) {
+                if (avatarUrl) {
+                    const img = document.createElement("img");
+                    img.className = "avatar";
+                    img.src = avatarUrl;
+                    img.alt = "";
+                    return img;
+                }
+                const el = document.createElement("span");
+                el.className = "avatar";
+                el.style.background = avatarColor(name || "?");
+                el.textContent = (name || "?").trim().charAt(0).toLocaleUpperCase("tr-TR");
+                return el;
+            }
+
             function appendSystemMessage(text) {
                 const el = document.createElement("div");
                 el.className = "message system";
@@ -957,9 +1167,10 @@
                 list.scrollTop = list.scrollHeight;
             }
 
-            function appendChatMessage(user, text) {
+            function appendChatMessage(user, text, avatarUrl) {
                 const el = document.createElement("div");
                 el.className = "message";
+                el.appendChild(buildAvatar(user, avatarUrl));
                 const who = document.createElement("span");
                 who.className = "who";
                 who.textContent = user + ":";
@@ -970,7 +1181,7 @@
                 list.scrollTop = list.scrollHeight;
             }
 
-            function buildParticipantRow(connectionId, name, isYou, muted, status) {
+            function buildParticipantRow(connectionId, name, avatarUrl, isYou, muted, status) {
                 const li = document.createElement("li");
                 li.className = "participant" + (isYou ? " you" : "") + (muted ? " muted" : "");
                 li.dataset.connectionId = connectionId;
@@ -982,6 +1193,8 @@
                     crown.title = "Bu odanın kurucususun";
                     li.appendChild(crown);
                 }
+
+                li.appendChild(buildAvatar(name, avatarUrl));
 
                 const nameEl = document.createElement("span");
                 nameEl.className = "name";
@@ -1051,11 +1264,11 @@
             function renderParticipantList() {
                 const list = document.getElementById("participantList");
                 list.innerHTML = "";
-                list.appendChild(buildParticipantRow("__self__", currentUsername, true, isMuted, "connected"));
+                list.appendChild(buildParticipantRow("__self__", currentUsername, currentAvatarUrl, true, isMuted, "connected"));
 
                 for (const [connectionId, p] of participants.entries()) {
                     const status = p.pc ? p.pc.connectionState : "pending";
-                    list.appendChild(buildParticipantRow(connectionId, p.username, false, p.muted, status));
+                    list.appendChild(buildParticipantRow(connectionId, p.username, p.avatarUrl, false, p.muted, status));
                 }
 
                 document.getElementById("participantCount").textContent = `${participants.size + 1} kişi`;
@@ -1098,13 +1311,14 @@
 
             // ---------- Oda / WebRTC durumu ----------
 
-            function getOrCreateParticipant(connectionId, name) {
+            function getOrCreateParticipant(connectionId, name, avatarUrl) {
                 let p = participants.get(connectionId);
                 if (!p) {
-                    p = { username: name || "Katılımcı", pc: null, audioEl: null, muted: false, volume: 1 };
+                    p = { username: name || "Katılımcı", avatarUrl: avatarUrl || null, pc: null, audioEl: null, muted: false, volume: 1 };
                     participants.set(connectionId, p);
-                } else if (name) {
-                    p.username = name;
+                } else {
+                    if (name) p.username = name;
+                    if (avatarUrl) p.avatarUrl = avatarUrl;
                 }
                 return p;
             }
@@ -1409,6 +1623,74 @@
                 participants.delete(connectionId);
             }
 
+            // ---------- Oda rayı: Discord'un sunucu listesine benzer, tıklayınca
+            // sayfa yenilemeden başka bir odaya geçilen dikey liste ----------
+
+            function renderRoomRail(rooms) {
+                const list = document.getElementById("roomRailList");
+                list.innerHTML = "";
+                for (const r of rooms) {
+                    const btn = document.createElement("button");
+                    btn.type = "button";
+                    btn.className = "room-icon" + (r.code === currentRoomCode ? " active" : "");
+                    btn.style.background = avatarColor(r.name || r.code);
+                    btn.title = `${r.name} · ${r.userCount} kişi${r.hasPassword ? " · şifreli" : ""}`;
+
+                    const initial = document.createElement("span");
+                    initial.textContent = (r.name || r.code).trim().charAt(0).toLocaleUpperCase("tr-TR");
+                    btn.appendChild(initial);
+
+                    const badge = document.createElement("span");
+                    badge.className = "room-icon-badge";
+                    badge.textContent = r.userCount;
+                    btn.appendChild(badge);
+
+                    if (r.hasPassword) {
+                        const lock = document.createElement("span");
+                        lock.className = "room-icon-lock";
+                        lock.textContent = "🔒";
+                        btn.appendChild(lock);
+                    }
+
+                    btn.addEventListener("click", () => switchRoom(r.code, r.hasPassword));
+                    list.appendChild(btn);
+                }
+            }
+
+            async function switchRoom(newCode, hasPassword) {
+                if (newCode === currentRoomCode) return;
+
+                let password = null;
+                if (hasPassword) {
+                    password = prompt("Bu oda şifreli. Şifreyi yaz:");
+                    if (password === null) return; // vazgeçildi
+                }
+
+                roomBeforeSwitch = currentRoomCode;
+                isSwitchingRoom = true;
+
+                try {
+                    await connection.invoke("LeaveRoom");
+                } catch (err) {
+                    console.error("Odadan ayrılma hatası:", err);
+                }
+
+                // Eski odanın tüm ses/bağlantı durumunu temizle.
+                Array.from(participants.keys()).forEach(teardownParticipant);
+                document.getElementById("messagesList").innerHTML = "";
+
+                currentRoomCode = newCode;
+                document.getElementById("roomCodeText").textContent = newCode;
+
+                try {
+                    await connection.invoke("JoinRoom", currentRoomCode, currentUsername, password, currentAvatarUrl);
+                } catch (err) {
+                    console.error("Odaya katılma hatası:", err);
+                } finally {
+                    isSwitchingRoom = false;
+                }
+            }
+
             // ---------- SignalR olayları ----------
 
             connection.on("JoinedRoom", (roomCode, moderator) => {
@@ -1416,8 +1698,22 @@
                 renderParticipantList();
             });
 
+            connection.on("RoomListChanged", (rooms) => {
+                renderRoomRail(rooms);
+            });
+
             connection.on("JoinError", (reason) => {
                 alert(reason || "Odaya katılamadın.");
+                if (isSwitchingRoom && roomBeforeSwitch) {
+                    // Oda değiştirirken başarısız olduk (ör. yanlış şifre) — kullanıcıyı
+                    // Login'e atmak yerine bulunduğu eski odaya geri döndürmeyi dene.
+                    isSwitchingRoom = false;
+                    currentRoomCode = roomBeforeSwitch;
+                    document.getElementById("roomCodeText").textContent = currentRoomCode;
+                    connection.invoke("JoinRoom", currentRoomCode, currentUsername, null, currentAvatarUrl)
+                        .catch(() => { window.location.href = "/Chat/Login"; });
+                    return;
+                }
                 window.location.href = `/Chat/Login?roomCode=${encodeURIComponent(currentRoomCode)}`;
             });
 
@@ -1435,14 +1731,14 @@
                     return;
                 }
                 for (const u of users) {
-                    getOrCreateParticipant(u.connectionId, u.username);
+                    getOrCreateParticipant(u.connectionId, u.username, u.avatarUrl);
                     await callUser(u.connectionId);
                 }
                 renderParticipantList();
             });
 
-            connection.on("UserJoined", (connectionId, name) => {
-                getOrCreateParticipant(connectionId, name);
+            connection.on("UserJoined", (connectionId, name, avatarUrl) => {
+                getOrCreateParticipant(connectionId, name, avatarUrl);
                 renderParticipantList();
                 appendSystemMessage(`${name} odaya katıldı.`);
             });
@@ -1493,8 +1789,10 @@
                 appendSystemMessage(`${name} odadan ayrıldı.`);
             });
 
-            connection.on("ReceiveMessage", (user, message) => {
-                appendChatMessage(user, message);
+            connection.on("ReceiveMessage", (senderConnectionId, user, message) => {
+                const isSelf = senderConnectionId === connection.connectionId;
+                const avatarUrl = isSelf ? currentAvatarUrl : (participants.get(senderConnectionId)?.avatarUrl || null);
+                appendChatMessage(user, message, avatarUrl);
             });
 
             // ---------- Kontroller ----------
@@ -1653,7 +1951,7 @@
             connection.start()
                 .then(() => {
                     setStatus(true);
-                    return connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword);
+                    return connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword, currentAvatarUrl);
                 })
                 .then(() => renderParticipantList())
                 .catch(err => {
@@ -1672,7 +1970,7 @@
                 // (sayfa yenilenmediyse) şifreli odalarda sorun çıkmaz.
                 setStatus(true);
                 participants.forEach((p, id) => teardownParticipant(id));
-                connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword)
+                connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword, currentAvatarUrl)
                     .then(() => renderParticipantList());
             });
 
