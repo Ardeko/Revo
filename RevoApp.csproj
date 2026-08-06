@@ -4,9 +4,17 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-<<<<<<< HEAD
     <!-- exe olarak açılınca arkada siyah bir konsol penceresi belirmesin diye. -->
     <OutputType>WinExe</OutputType>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <!-- .exe dosyasının Explorer'da / görev çubuğunda kendi ikonuyla görünmesi
+         için — bu eksikti, o yüzden dosya Windows'un varsayılan generic
+         ikonuyla görünüyordu. Program.cs'teki SetIconFile ise bundan ayrı:
+         o sadece pencere ÇALIŞIRKEN başlık çubuğu/taskbar ikonunu ayarlıyor,
+         .exe dosyasının kendi ikonunu değil. Şimdilik mevcut favicon.ico
+         kullanılıyor; istersen daha yüksek çözünürlüklü ayrı bir ikon dosyasıyla
+         değiştirebilirsin. -->
+    <ApplicationIcon>wwwroot/favicon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,13 +22,6 @@
          dahil geldi, ayrı pakete gerek yok — NU1510 uyarısının nedeni buydu.
          Photino.NET'in gerçek GitHub etiketlerinden doğrulanmış son sürümü v4.0.16 —
          3.* değil 4.* olması gerekiyordu. Photino.Native bağımlılığı otomatik gelir. -->
-=======
-    <OutputType>WinExe</OutputType>
-    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
-  </PropertyGroup>
-
-  <ItemGroup>
->>>>>>> 388177094b16fda2e82046106257e98ea04a2b57
     <PackageReference Include="Photino.NET" Version="4.0.16" />
   </ItemGroup>
 

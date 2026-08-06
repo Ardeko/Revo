@@ -5,13 +5,18 @@
    fallback'ler devreye girer. */
 
 :root {
-    --tb-bg: rgba(11, 14, 19, 0.92);
+    --tb-bg: #0b0e13;
     --tb-border: #1c232c;
     --tb-text: #8a93a3;
     --tb-text-strong: #edebe6;
     --tb-amber: #e3a857;
+    --tb-signal: #3ecfc0;
     --tb-danger: #c1594a;
     --tb-height: 36px;
+    /* REVO her zaman koyu temalı — tarayıcı/OS kontrollerinin (ör. native
+       scrollbar, form elemanları) da koyu varyantı kullanmasını sağlar,
+       aşağıdaki custom scrollbar kurallarıyla birlikte çalışır. */
+    color-scheme: dark;
 }
 
 html, body {
@@ -29,10 +34,13 @@ html, body {
     display: flex;
     align-items: stretch;
     justify-content: space-between;
+    /* NOT: bilerek blur/backdrop-filter YOK. Bu şerit doğrudan oynayan
+       video + kayan SVG çizgilerinin üstünde durduğu için canlı bir blur
+       her karede yeniden hesaplanıyordu — WebView2'de gözle görülür FPS
+       düşüşünün asıl kaynağı buydu. Düz, hafif saydam koyu zemin aynı
+       "modern" hissi çok daha ucuza veriyor. */
     background: var(--tb-bg);
     border-bottom: 1px solid var(--tb-border);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
     z-index: 100000;
     user-select: none;
     -webkit-user-select: none;
@@ -116,9 +124,33 @@ html, body {
     padding-top: var(--tb-height);
 }
 
-@media (prefers-color-scheme: light) {
-    .revo-titlebar {
-        background: rgba(255, 255, 255, 0.85);
-        border-bottom-color: #e5e5e5;
-    }
+/* ===================== Global custom scrollbar ===================== */
+/* "Sağdaki scroll" — hem Login hem _Layout sayfalarında geçerli olsun diye
+   burada, her sayfada zaten yüklenen titlebar.css içinde tanımlı. */
+
+* {
+    scrollbar-width: thin; /* Firefox / WebView2'nin Gecko modu */
+    scrollbar-color: var(--tb-amber) transparent;
+}
+
+::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--tb-signal), var(--tb-amber));
+    border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--tb-amber);
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
 }
