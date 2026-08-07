@@ -1,27 +1,26 @@
 /* ===================== REVO — Custom Title Bar ===================== */
-/* Chromeless Photino penceresi için minimal başlık çubuğu.
-   Renk paleti Login.cshtml'deki :root değişkenleriyle uyumlu; _Layout
-   tarafında kullanılan sayfalarda bu değişkenler tanımlı değilse aşağıdaki
-   fallback'ler devreye girer. */
+/* Chromeless Photino penceresi için başlık çubuğu.
+   Renk paleti Login.cshtml / Index.cshtml'deki :root değişkenleriyle uyumlu;
+   bu değişkenlerin tanımlı olmadığı sayfalar için aşağıda fallback var. */
 
 :root {
     --tb-bg: #0b0e13;
+    --tb-bg-hover: rgba(255, 255, 255, 0.055);
     --tb-border: #1c232c;
     --tb-text: #8a93a3;
     --tb-text-strong: #edebe6;
     --tb-amber: #e3a857;
     --tb-signal: #3ecfc0;
     --tb-danger: #c1594a;
-    --tb-height: 36px;
-    /* REVO her zaman koyu temalı — tarayıcı/OS kontrollerinin (ör. native
-       scrollbar, form elemanları) da koyu varyantı kullanmasını sağlar,
-       aşağıdaki custom scrollbar kurallarıyla birlikte çalışır. */
+    --tb-height: 34px;
+    /* REVO her zaman koyu temalı — form elemanları, seçim rengi ve
+       varsayılan kontroller de koyu varyantı kullansın. */
     color-scheme: dark;
 }
 
 html, body {
     /* Chromeless pencerede OS artık kenarlık çizmiyor; içerik en üstten
-       başlıyor, bu yüzden sayfanın geri kalanına sabit boşluk veriyoruz. */
+       başlıyor. */
     margin: 0;
 }
 
@@ -34,43 +33,66 @@ html, body {
     display: flex;
     align-items: stretch;
     justify-content: space-between;
-    /* NOT: bilerek blur/backdrop-filter YOK. Bu şerit doğrudan oynayan
-       video + kayan SVG çizgilerinin üstünde durduğu için canlı bir blur
-       her karede yeniden hesaplanıyordu — WebView2'de gözle görülür FPS
-       düşüşünün asıl kaynağı buydu. Düz, hafif saydam koyu zemin aynı
-       "modern" hissi çok daha ucuza veriyor. */
+    /* NOT: bilerek blur/backdrop-filter YOK. Bu şerit oynayan video ve kayan
+       SVG çizgilerinin üstünde duruyor; canlı blur her karede yeniden
+       hesaplanıyor ve WebView2'de gözle görülür FPS düşüşüne yol açıyordu.
+       Düz koyu zemin aynı hissi çok daha ucuza veriyor. */
     background: var(--tb-bg);
-    border-bottom: 1px solid var(--tb-border);
     z-index: 100000;
     user-select: none;
     -webkit-user-select: none;
     font-family: 'IBM Plex Sans', system-ui, sans-serif;
 }
 
-/* Sürüklenebilir alan: başlık çubuğunun tamamı, butonlar hariç */
+/* Alt kenarlık: soldan sağa amber → sinyal yeşili → sönümlenme.
+   Uygulamanın "frekans" dilini pencerenin en üst kenarına taşıyan tek
+   piksellik bir imza. Düz gri bir çizgi yerine bunu tercih ettim çünkü
+   maliyeti sıfır ve şeridi jenerik olmaktan çıkarıyor. */
+.revo-titlebar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(
+        90deg,
+        var(--tb-amber) 0%,
+        var(--tb-signal) 22%,
+        var(--tb-border) 55%,
+        var(--tb-border) 100%
+    );
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+/* Sürüklenebilir alan: şeridin tamamı, butonlar hariç */
 .revo-titlebar__drag {
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding-left: 12px;
+    gap: 9px;
+    padding-left: 13px;
     min-width: 0;
+    cursor: default;
 }
 
 .revo-titlebar__logo {
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, var(--tb-amber), #7a5322 75%);
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, var(--tb-amber), #a8712c 85%);
+    box-shadow: 0 0 0 1px rgba(227, 168, 87, 0.22), 0 0 10px rgba(227, 168, 87, 0.18);
     flex-shrink: 0;
 }
 
 .revo-titlebar__title {
-    font-size: 11.5px;
-    letter-spacing: 1.4px;
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 10.5px;
+    letter-spacing: 2.2px;
     text-transform: uppercase;
     color: var(--tb-text);
-    font-weight: 600;
+    font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -84,6 +106,8 @@ html, body {
 
 .revo-titlebar__btn {
     -webkit-app-region: no-drag;
+    /* 46px, Windows'un kendi pencere düğmelerinin genişliği — kas hafızası
+       tutsun diye bilerek aynı. */
     width: 46px;
     height: var(--tb-height);
     display: flex;
@@ -92,50 +116,81 @@ html, body {
     background: transparent;
     border: none;
     color: var(--tb-text);
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
+    cursor: default;
+    transition: background 0.12s ease, color 0.12s ease;
     padding: 0;
+    position: relative;
 }
 
 .revo-titlebar__btn svg {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     display: block;
+    /* Windows 11'in ince çizgili pencere ikonlarıyla aynı ağırlık. */
+    shape-rendering: geometricPrecision;
 }
 
 .revo-titlebar__btn:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--tb-bg-hover);
     color: var(--tb-text-strong);
 }
 
+.revo-titlebar__btn:active {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+/* Kapat düğmesi: Windows'ta olduğu gibi kırmızıya döner. Bu, öğrenilmiş bir
+   işaret — farklı bir renk kullanmak "modern" değil, sadece kafa karıştırıcı
+   olurdu. */
 .revo-titlebar__btn--close:hover {
     background: var(--tb-danger);
     color: #fff;
 }
 
-.revo-titlebar__btn:active {
-    filter: brightness(0.85);
+.revo-titlebar__btn--close:active {
+    background: #a94a3d;
 }
 
-/* Sayfa içeriğini başlık çubuğunun altına iter. Login.cshtml gibi
-   position:fixed/100vh kullanan sayfalarda bunun yerine padding-top ile
-   iç elemanı kaydırıyoruz (bkz. sayfa içindeki .revo-with-titlebar). */
+/* Klavye ile gezinenler için görünür odak halkası. Fare ile tıklamada
+   çıkmaz (:focus-visible), sadece Tab ile gelindiğinde. */
+.revo-titlebar__btn:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--tb-signal);
+}
+
+/* Sayfa içeriğini başlık çubuğunun altına iter. */
 .revo-with-titlebar {
     padding-top: var(--tb-height);
 }
 
-/* ===================== Global custom scrollbar ===================== */
-/* "Sağdaki scroll" — hem Login hem _Layout sayfalarında geçerli olsun diye
-   burada, her sayfada zaten yüklenen titlebar.css içinde tanımlı. */
-
-* {
-    scrollbar-width: thin; /* Firefox / WebView2'nin Gecko modu */
-    scrollbar-color: var(--tb-amber) transparent;
+/* Tarayıcıda (masaüstü uygulaması değil) şerit gizlenir — titlebar.js
+   ayrıca --tb-height'i 0'a çeker, böylece sayfa yukarı kayar. */
+.revo-titlebar[hidden] {
+    display: none;
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .revo-titlebar__btn {
+        transition: none;
+    }
+}
+
+/* ===================== Global custom scrollbar ===================== */
+/* ÖNEMLİ DAVRANIŞ: Chromium 121'den itibaren, bir elemanda scrollbar-width
+   ya da scrollbar-color tanımlıysa ::-webkit-scrollbar-* kuralları TAMAMEN
+   yok sayılıyor (CSSWG kararı: standart özellikler eski pseudo'ları ezer).
+   Eski kodda ikisi birden `*` üzerinde tanımlıydı; bu yüzden aşağıdaki
+   gradyanlı, yuvarlatılmış tutamak hiç çizilmiyordu — geriye düz, karakter-
+   siz bir çubuk kalıyordu. "Custom scrollbar gitmiş" dediğin şeyin sebebi
+   tam olarak buydu.
+
+   Çözüm: Chromium/WebKit'te zengin pseudo-element sürümünü kullan, standart
+   özellikleri yalnızca pseudo'ları DESTEKLEMEYEN tarayıcılara (Firefox)
+   @supports ile ver. */
+
 ::-webkit-scrollbar {
-    width: 9px;
-    height: 9px;
+    width: 10px;
+    height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -145,12 +200,25 @@ html, body {
 ::-webkit-scrollbar-thumb {
     background: linear-gradient(180deg, var(--tb-signal), var(--tb-amber));
     border-radius: 999px;
+    /* Şeffaf kenarlık + background-clip, tutamağın kenarlardan nefes almasını
+       sağlıyor; kanala yapışık kalın bir çubuk yerine ince, yüzen bir şerit. */
+    border: 3px solid transparent;
+    background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
     background: var(--tb-amber);
+    border: 2px solid transparent;
+    background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-corner {
     background: transparent;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: var(--tb-amber) transparent;
+    }
 }

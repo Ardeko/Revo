@@ -44,26 +44,10 @@
             font-family: 'IBM Plex Sans', sans-serif;
         }
 
-        /* Kaydırma çubuğu eskiden --border (#262E38) rengindeydi; panellerin
-           koyu zemininde neredeyse görünmüyordu. Sinyal yeşilinden kehribara
-           giden ince bir şerit hem görünür hem uygulamanın paletinde kalıyor. */
-        * {
-            scrollbar-width: thin;
-            scrollbar-color: var(--amber, #E3A857) transparent;
-        }
-
-        ::-webkit-scrollbar { width: 9px; height: 9px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-
-        ::-webkit-scrollbar-thumb {
-            background: linear-gradient(180deg, var(--signal, #3ECFC0), var(--amber, #E3A857));
-            border-radius: 999px;
-            border: 2px solid transparent;
-            background-clip: padding-box;
-        }
-
-        ::-webkit-scrollbar-thumb:hover { background: var(--amber, #E3A857); }
-        ::-webkit-scrollbar-corner { background: transparent; }
+        /* Kaydırma çubuğu kuralları titlebar.css'te tek bir yerde tanımlı
+           (her sayfada yükleniyor). Burada tekrar tanımlamak, Chromium'un
+           "scrollbar-color varsa ::-webkit-scrollbar'ı yok say" kuralı
+           yüzünden özel görünümü sessizce iptal ediyordu. */
 
         .app {
             display: flex;
@@ -1160,9 +1144,39 @@
             // (görsel veri URL'e ya da TempData'nın çerez tabanlı deposuna sığmayabilir).
             const currentAvatarUrl = sessionStorage.getItem("revoAvatar") || null;
 
-            const configuration = {
-                iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+            // ICE sunucuları artık sunucudan geliyor (/ice/servers). Orada
+            // Cloudflare'den kısa ömürlü TURN kimlik bilgisi alınıyor.
+            //
+            // Neden önemli: STUN sadece iki tarafın birbirini doğrudan bulmasını
+            // sağlar. Simetrik NAT arkasındaki kullanıcılarda doğrudan yol hiç
+            // kurulamaz ve trafiğin bir aracıdan geçmesi gerekir — TURN budur.
+            // Odada 6 kişi varsa 15 ikili bağlantı kuruluyor; içlerinden birinin
+            // doğrudan bağlanamama olasılığı tek ikiliye göre kat kat yüksek.
+            // TURN olmadan "biri herkesi duyuyor ama diğeri duymuyor" tarzı
+            // arızalar kaçınılmaz.
+            let configuration = {
+                iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
+                // Aday havuzunu önden doldurmak, ilk bağlantıyı hissedilir
+                // ölçüde hızlandırıyor.
+                iceCandidatePoolSize: 4,
             };
+
+            // Sunucudan gelene kadar bekleyeceğimiz söz (promise). Odaya
+            // katılmadan önce bekleniyor ki ilk peer bağlantısı da TURN görsün.
+            const iceServersReady = (async () => {
+                try {
+                    const res = await fetch("/ice/servers", { cache: "no-store" });
+                    if (!res.ok) throw new Error("HTTP " + res.status);
+                    const data = await res.json();
+                    if (Array.isArray(data.iceServers) && data.iceServers.length) {
+                        configuration = { ...configuration, iceServers: data.iceServers };
+                    }
+                } catch (err) {
+                    // Sunucuya ulaşılamazsa yukarıdaki STUN'la devam — çoğu
+                    // kullanıcı yine bağlanır, sadece garanti azalır.
+                    console.warn("ICE sunucu listesi alınamadı, STUN ile devam ediliyor:", err);
+                }
+            })();
 
             let localStream = null;   // o an track olarak kullanılan stream (temiz ya da ham)
             let rawStream = null;     // getUserMedia'dan gelen işlenmemiş ses
@@ -1453,12 +1467,67 @@
                 pc.onconnectionstatechange = () => renderParticipantList();
 
                 if (localStream) {
-                    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+                    localStream.getTracks().forEach(track => {
+                        const sender = pc.addTrack(track, localStream);
+                        if (track.kind === "audio") tuneAudioSender(sender);
+                    });
                 }
 
                 p.pc = pc;
                 renderParticipantList();
                 return pc;
+            }
+
+            // WebRTC ses için varsayılan olarak oldukça tutucu bir Opus bit hızı
+            // seçiyor (genelde ~24-32 kbps). Konuşma için yeterli ama "kaliteli"
+            // değil. 48 kbps mono, konuşmada belirgin biçimde daha dolgun ve
+            // tizleri kırpmıyor; 6 kişilik bir odada bile yükleme yükü ~240 kbps
+            // civarında kalıyor, yani sıradan bir ev bağlantısı için sorun değil.
+            function tuneAudioSender(sender) {
+                if (!sender || typeof sender.getParameters !== "function") return;
+                try {
+                    const params = sender.getParameters();
+                    if (!params.encodings || !params.encodings.length) {
+                        params.encodings = [{}];
+                    }
+                    params.encodings[0].maxBitrate = 48000;
+                    // Ses için ağ dalgalanmasında bit hızını düşürmektense
+                    // çözünürlüğü korumak istiyoruz (video değil, ses).
+                    params.encodings[0].networkPriority = "high";
+                    params.encodings[0].priority = "high";
+                    sender.setParameters(params).catch(err => {
+                        console.warn("Ses gönderim parametreleri uygulanamadı:", err);
+                    });
+                } catch (err) {
+                    console.warn("Ses gönderim parametreleri okunamadı:", err);
+                }
+            }
+
+            // Opus'un kendi ayarları SDP içinde taşınıyor ve setParameters ile
+            // değiştirilemiyor — bu yüzden SDP'yi doğrudan düzenliyoruz:
+            //   useinbandfec=1  → paket kaybında sesi onarır (uluslararası
+            //                     bağlantılarda en çok fark yaratan ayar)
+            //   usedtx=0        → sessizlikte aktarımı kesme; kesmek bazı
+            //                     ağlarda bağlantının "uyumasına" yol açıyor
+            //   maxaveragebitrate → yukarıdaki 48 kbps ile uyumlu tavan
+            //   maxplaybackrate=48000 → tam bant genişliği, telefon kalitesi değil
+            function tuneOpusSdp(sdp) {
+                if (!sdp) return sdp;
+                return sdp.replace(/a=fmtp:(\d+) ([^\r\n]*minptime[^\r\n]*)/g, (match, pt, params) => {
+                    const wanted = {
+                        useinbandfec: "1",
+                        usedtx: "0",
+                        stereo: "0",
+                        maxaveragebitrate: "48000",
+                        maxplaybackrate: "48000",
+                    };
+                    const parts = params.split(";").map(s => s.trim()).filter(Boolean);
+                    const seen = new Set(parts.map(s => s.split("=")[0]));
+                    for (const [key, value] of Object.entries(wanted)) {
+                        if (!seen.has(key)) parts.push(`${key}=${value}`);
+                    }
+                    return `a=fmtp:${pt} ${parts.join(";")}`;
+                });
             }
 
             async function buildCleanStream(sourceStream) {
@@ -1632,6 +1701,7 @@
                     if (!p.pc) continue;
                     try {
                         const offer = await p.pc.createOffer();
+                        offer.sdp = tuneOpusSdp(offer.sdp);
                         await p.pc.setLocalDescription(offer);
                         await connection.invoke("SendOffer", connectionId, JSON.stringify(offer));
                     } catch (err) {
@@ -1697,6 +1767,7 @@
             async function callUser(connectionId) {
                 const pc = createPeerConnectionFor(connectionId);
                 const offer = await pc.createOffer();
+                offer.sdp = tuneOpusSdp(offer.sdp);
                 await pc.setLocalDescription(offer);
                 await connection.invoke("SendOffer", connectionId, JSON.stringify(offer));
             }
@@ -1844,6 +1915,7 @@
                 const pc = createPeerConnectionFor(senderConnectionId);
                 await pc.setRemoteDescription(new RTCSessionDescription(offer));
                 const answer = await pc.createAnswer();
+                answer.sdp = tuneOpusSdp(answer.sdp);
                 await pc.setLocalDescription(answer);
                 await connection.invoke("SendAnswer", senderConnectionId, JSON.stringify(answer));
             });
@@ -2037,7 +2109,10 @@
 
             // ---------- Başlangıç ----------
 
-            connection.start()
+            // ICE listesi (TURN dahil) hazır olmadan odaya katılmıyoruz —
+            // aksi halde ilk kurulan peer bağlantısı sadece STUN görür ve
+            // kısıtlı ağdaki kullanıcı tam da ilk bağlantıda takılır.
+            Promise.all([connection.start(), iceServersReady])
                 .then(() => {
                     setStatus(true);
                     return connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword, currentAvatarUrl);
