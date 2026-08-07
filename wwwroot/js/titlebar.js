@@ -5,28 +5,45 @@
 // (WM_NCLBUTTONDOWN + HTCAPTION) hilesiyle yapıyoruz. Bu dosya sadece
 // mesajları C# tarafına iletiyor.
 (function () {
+    // Photino masaüstü penceresinde miyiz, yoksa normal tarayıcıda mı?
+    // ardaguner.xyz'de sayfa tarayıcıda açıldığında küçült/büyüt/kapat
+    // düğmeleri anlamsız (ve çalışmaz) — o durumda şeridi hiç göstermiyoruz.
+    function isDesktopHost() {
+        return !!(window.external && typeof window.external.sendMessage === "function");
+    }
+
     function sendToHost(message) {
-        // Photino.NET her pencereye window.external.sendMessage enjekte eder.
-        if (window.external && typeof window.external.sendMessage === "function") {
+        if (isDesktopHost()) {
             window.external.sendMessage(message);
-        } else {
-            console.warn("REVO titlebar: Photino web message köprüsü bulunamadı:", message);
         }
     }
 
+    // Büyütülmüş durumda ikon "geri yükle"ye dönüşsün (üst üste iki kare) —
+    // Windows'un kendi pencere düğmelerindeki alışılmış davranış.
+    var ICON_MAXIMIZE = '<svg viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1" /></svg>';
+    var ICON_RESTORE = '<svg viewBox="0 0 12 12"><rect x="1.5" y="3.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1" /><path d="M3.5 3.5 V1.5 H10.5 V8.5 H8.5" fill="none" stroke="currentColor" stroke-width="1" /></svg>';
+
     document.addEventListener("DOMContentLoaded", function () {
-        const bar = document.querySelector(".revo-titlebar");
+        var bar = document.querySelector(".revo-titlebar");
         if (!bar) return;
 
-        const dragArea = bar.querySelector(".revo-titlebar__drag");
-        const minBtn = bar.querySelector(".revo-titlebar__btn--minimize");
-        const maxBtn = bar.querySelector(".revo-titlebar__btn--maximize");
-        const closeBtn = bar.querySelector(".revo-titlebar__btn--close");
+        if (!isDesktopHost()) {
+            bar.style.display = "none";
+            // Sayfa düzeni --tb-height kadar boşluk bırakıyor; tarayıcıda o
+            // boşluğa gerek yok.
+            document.documentElement.style.setProperty("--tb-height", "0px");
+            return;
+        }
+
+        var dragArea = bar.querySelector(".revo-titlebar__drag");
+        var minBtn = bar.querySelector(".revo-titlebar__btn--minimize");
+        var maxBtn = bar.querySelector(".revo-titlebar__btn--maximize");
+        var closeBtn = bar.querySelector(".revo-titlebar__btn--close");
 
         if (dragArea) {
             dragArea.addEventListener("mousedown", function (e) {
                 // Sol tık dışındaki tıklamalarda (sağ tık menüsü vs.) sürükleme
-                // başlatma; ayrıca çift tıkla maximize/restore'u da burada ele alalım.
+                // başlatma; çift tıkla maximize/restore aşağıda ele alınıyor.
                 if (e.button !== 0) return;
                 sendToHost("titlebar:drag-start");
             });
@@ -54,13 +71,29 @@
             });
         }
 
-        // C# tarafı her komuttan sonra "titlebar:state:maximized|normal" geri
-        // gönderiyor; buna göre maximize ikonunu restore ikonuna çeviriyoruz.
-        window.addEventListener("message", function (event) {
-            const data = typeof event.data === "string" ? event.data : "";
-            if (!data.startsWith("titlebar:state:")) return;
-            const isMaximized = data.endsWith("maximized");
+        function applyState(text) {
+            if (typeof text !== "string" || text.indexOf("titlebar:state:") !== 0) return;
+            var isMaximized = text.slice("titlebar:state:".length) === "maximized";
             bar.classList.toggle("is-maximized", isMaximized);
+            if (maxBtn) {
+                maxBtn.innerHTML = isMaximized ? ICON_RESTORE : ICON_MAXIMIZE;
+                maxBtn.setAttribute("aria-label", isMaximized ? "Geri Yükle" : "Büyüt");
+            }
+        }
+
+        // ÖNEMLİ: Photino, C# tarafındaki SendWebMessage çağrılarını
+        // window.external.receiveMessage(callback) üzerinden teslim ediyor —
+        // tarayıcıların standart "message" olayı üzerinden DEĞİL. Eski kod
+        // window.addEventListener("message", …) dinlediği için büyütme ikonu
+        // hiçbir zaman güncellenmiyordu.
+        if (typeof window.external.receiveMessage === "function") {
+            window.external.receiveMessage(applyState);
+        }
+
+        // Yine de standart olayı da dinliyoruz: Photino'nun ileriki bir sürümü
+        // ya da farklı bir gömme senaryosu bu yolu kullanırsa çalışmaya devam etsin.
+        window.addEventListener("message", function (event) {
+            applyState(typeof event.data === "string" ? event.data : "");
         });
     });
 })();

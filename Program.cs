@@ -201,7 +201,12 @@ if (isDesktop)
                 windowThreadException = ex;
             }
         });
-        windowThread.SetApartmentState(ApartmentState.STA);
+        // STA yalnızca Windows'ta anlamlı; OperatingSystem kontrolü hem doğru
+        // davranış hem de CA1416 platform uyarısını temizler.
+        if (OperatingSystem.IsWindows())
+        {
+            windowThread.SetApartmentState(ApartmentState.STA);
+        }
         windowThread.Start();
         windowThread.Join(); // ana thread, pencere kapanana kadar burada bekler
 

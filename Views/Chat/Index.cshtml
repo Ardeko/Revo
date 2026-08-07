@@ -13,6 +13,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="~/css/cursor.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/titlebar.css" asp-append-version="true" />
     <style>
         :root {
             --bg: #0B0E13;
@@ -43,17 +44,37 @@
             font-family: 'IBM Plex Sans', sans-serif;
         }
 
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        /* Kaydırma çubuğu eskiden --border (#262E38) rengindeydi; panellerin
+           koyu zemininde neredeyse görünmüyordu. Sinyal yeşilinden kehribara
+           giden ince bir şerit hem görünür hem uygulamanın paletinde kalıyor. */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: var(--amber, #E3A857) transparent;
+        }
+
+        ::-webkit-scrollbar { width: 9px; height: 9px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--panel-3); }
+
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, var(--signal, #3ECFC0), var(--amber, #E3A857));
+            border-radius: 999px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+        }
+
+        ::-webkit-scrollbar-thumb:hover { background: var(--amber, #E3A857); }
+        ::-webkit-scrollbar-corner { background: transparent; }
 
         .app {
             display: flex;
             flex-direction: column;
-            height: 100vh;
+            /* Sabit başlık çubuğu (--tb-height, titlebar.css) yüksekliği kadar
+               alan bırakıyoruz; aksi halde üst şerit içeriğin üstüne biniyor. */
+            height: calc(100vh - var(--tb-height, 36px));
+            margin-top: var(--tb-height, 36px);
             max-width: 1000px;
-            margin: 0 auto;
+            margin-left: auto;
+            margin-right: auto;
             opacity: 0;
             animation: fade-in 0.5s ease 0.05s forwards;
         }
@@ -959,6 +980,27 @@
     </style>
 </head>
 <body>
+    <div class="revo-titlebar">
+        <div class="revo-titlebar__drag">
+            <span class="revo-titlebar__logo" aria-hidden="true"></span>
+            <span class="revo-titlebar__title">REVO</span>
+        </div>
+        <div class="revo-titlebar__controls">
+            <button type="button" class="revo-titlebar__btn revo-titlebar__btn--minimize" aria-label="Küçült">
+                <svg viewBox="0 0 12 12"><rect x="1" y="5.5" width="10" height="1" fill="currentColor" /></svg>
+            </button>
+            <button type="button" class="revo-titlebar__btn revo-titlebar__btn--maximize" aria-label="Büyüt / Geri Yükle">
+                <svg viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1" /></svg>
+            </button>
+            <button type="button" class="revo-titlebar__btn revo-titlebar__btn--close" aria-label="Kapat">
+                <svg viewBox="0 0 12 12">
+                    <line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1.2" />
+                    <line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1.2" />
+                </svg>
+            </button>
+        </div>
+    </div>
+
     <div class="room-field" aria-hidden="true">
         <svg viewBox="0 0 800 800" preserveAspectRatio="none">
             <path class="scan-line scan-room-1" d="M -50 150 Q 200 80 400 150 T 850 150" />
@@ -1066,8 +1108,43 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
     <script src="~/js/cursor.js" asp-append-version="true"></script>
-    <script type="module">
-        import { loadRnnoise, RnnoiseWorkletNode } from '/js/noise-suppressor/index.js';
+    <script src="~/js/titlebar.js" asp-append-version="true"></script>
+    <script>
+        // NOT: Burası eskiden type="module" olan bir betikti ve en üstte
+        // '/js/noise-suppressor/index.js' dosyasını STATİK olarak import ediyordu.
+        // O dosya en üst seviyesinde `class extends AudioWorkletNode { ... }`
+        // değerlendiriyor; AudioWorkletNode herhangi bir sebeple yoksa (WebView2'de
+        // güvenli bağlam sayılmama, Web Audio kısıtı vb.) import ANINDA patlıyor ve
+        // ES modüllerinde bir import patlarsa modülün TAMAMI hiç çalışmıyor —
+        // sessizce. Sonuç: SignalR hiç başlatılmıyor, durum yazısı HTML'deki
+        // varsayılan "BAĞLANIYOR" değerinde donuyor, katılımcı listesi ve alt
+        // roldeki kendi rozetin boş kalıyor. Tam olarak gördüğün tablo buydu.
+        // Çözüm: klasik script'e dönüp gürültü engellemeyi ihtiyaç anında
+        // dinamik import ile yüklemek — başarısız olursa sohbet yine de kurulur,
+        // sadece gürültü engelleme devre dışı kalır (o yol zaten kodda vardı).
+
+        // Bir daha "sessizce ölme" yaşamamak için: yakalanmamış her hatayı hem
+        // konsola hem de doğrudan sohbet paneline yazıyoruz. Masaüstü exe'de
+        // DevTools'u her zaman açamayabileceğin için bu, sorunu ekranda görmenin
+        // en hızlı yolu.
+        function revoFatal(label, detail) {
+            console.error(label, detail);
+            var box = document.getElementById("messagesList");
+            if (!box) return;
+            var el = document.createElement("div");
+            el.className = "message system";
+            el.textContent = label + ": " + detail;
+            box.appendChild(el);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        window.addEventListener("error", function (e) {
+            revoFatal("Betik hatası", (e.message || "bilinmiyor") + " — " + (e.filename || "?") + ":" + (e.lineno || 0));
+        });
+
+        window.addEventListener("unhandledrejection", function (e) {
+            revoFatal("İşlenmemiş hata", (e.reason && e.reason.message) || String(e.reason));
+        });
 
         (function () {
             // ViewBag.Username'i JSON olarak güvenli biçimde JS string'ine gömüyoruz.
@@ -1113,11 +1190,6 @@
             // connectionId -> { username, pc, audioEl, muted, volume }
             const participants = new Map();
 
-            // Alt kontrol çubuğundaki "kendi" rozeti (Discord'un sol alt kullanıcı
-            // paneline benzer) — bir kere, sayfa açılışında dolduruluyor.
-            document.getElementById("selfChip").prepend(buildAvatar(currentUsername, currentAvatarUrl));
-            document.getElementById("selfChipName").textContent = currentUsername;
-
             const connection = new signalR.HubConnectionBuilder()
                 .withUrl("/chatHub")
                 .withAutomaticReconnect()
@@ -1157,6 +1229,18 @@
                 el.textContent = (name || "?").trim().charAt(0).toLocaleUpperCase("tr-TR");
                 return el;
             }
+
+            // Alt kontrol çubuğundaki "kendi" rozeti (Discord'un sol alt kullanıcı
+            // paneline benzer) — bir kere, sayfa açılışında dolduruluyor.
+            // DİKKAT: bu satır eskiden yukarıda, AVATAR_PALETTE tanımlanmadan ÖNCE
+            // duruyordu. `const` TDZ (temporal dead zone) kuralı gereği bu
+            // "Cannot access 'AVATAR_PALETTE' before initialization" hatası
+            // fırlatıyor ve betiğin GERİ KALANI hiç çalışmıyordu — SignalR
+            // başlatılmıyor, "Odadan Çık" butonuna dinleyici bağlanmıyor, katılımcı
+            // listesi boş kalıyordu. Tek bir satırın yeri, gördüğün bütün
+            // belirtilerin ortak sebebiydi.
+            document.getElementById("selfChip").prepend(buildAvatar(currentUsername, currentAvatarUrl));
+            document.getElementById("selfChipName").textContent = currentUsername;
 
             function appendSystemMessage(text) {
                 const el = document.createElement("div");
@@ -1378,6 +1462,11 @@
             }
 
             async function buildCleanStream(sourceStream) {
+                // Gürültü engelleme modülünü ancak GERÇEKTEN gerektiği anda yüklüyoruz.
+                // Buradaki bir hata ensureLocalStream()'deki try/catch'e düşer ve
+                // sohbet ham mikrofonla sorunsuz devam eder.
+                const { loadRnnoise, RnnoiseWorkletNode } = await import('/js/noise-suppressor/index.js');
+
                 suppressorCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
                 await suppressorCtx.audioWorklet.addModule('/js/noise-suppressor/rnnoise/workletProcessor.js');
 

@@ -305,6 +305,85 @@
             text-transform: uppercase;
         }
 
+        /* ---------- Alan doğrulama (tarayıcının kendi balonu yerine) ----------
+           Tasarım fikri: uygulamanın zaten kullandığı "sinyal noktası" dilini
+           ödünç alıyoruz. Sohbet ekranında yeşil nokta = SİNYAL VAR, kırmızı
+           nokta = BAĞLANIYOR. Burada da eksik alan kırmızı, nabız gibi atan
+           küçük bir noktayla işaretleniyor — genel bir ⚠ ikonu yerine REVO'nun
+           kendi görsel diline ait bir işaret. */
+
+        .field-group.is-invalid input[type="text"],
+        .field-group.is-invalid input[type="password"] {
+            border-color: var(--danger);
+            background: rgba(193, 89, 74, 0.07);
+            animation: field-nudge 0.3s ease;
+        }
+
+        .field-group.is-invalid input[type="text"]:focus,
+        .field-group.is-invalid input[type="password"]:focus {
+            border-color: var(--danger);
+            box-shadow: 0 0 0 4px rgba(193, 89, 74, 0.15);
+            background: rgba(193, 89, 74, 0.09);
+        }
+
+        .field-note {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin: 8px 0 0;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--danger);
+            opacity: 0;
+            transform: translateY(-5px);
+            animation: note-in 0.22s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+        }
+
+        .field-note::before {
+            content: "";
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--danger);
+            flex: none;
+            animation: note-pulse 1.6s ease-in-out infinite;
+        }
+
+        @@keyframes note-in {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @@keyframes note-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.25; }
+        }
+
+        @@keyframes field-nudge {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-4px); }
+            40% { transform: translateX(4px); }
+            60% { transform: translateX(-2px); }
+            80% { transform: translateX(2px); }
+        }
+
+        @@media (prefers-reduced-motion: reduce) {
+            .field-group.is-invalid input[type="text"],
+            .field-group.is-invalid input[type="password"],
+            .field-note,
+            .field-note::before {
+                animation: none;
+            }
+
+            .field-note {
+                opacity: 1;
+                transform: none;
+            }
+        }
+
         /* ---------- Profil resmi seçici ---------- */
 
         .avatar-picker {
@@ -627,7 +706,8 @@
             padding: 7px 14px 7px 9px;
             border: 1px solid var(--border-soft);
             border-radius: 999px;
-            background: rgba(21, 26, 33, 0.82);
+            background: rgba(28, 35, 44, 0.5);
+            backdrop-filter: blur(6px);
             opacity: 0;
             transform: translateY(8px);
             animation: rise 0.6s cubic-bezier(.16,.8,.3,1) 0.55s forwards;
@@ -637,7 +717,7 @@
 
         .nameplate:hover {
             border-color: var(--amber);
-            background: rgba(21, 26, 33, 0.95);
+            background: rgba(28, 35, 44, 0.85);
         }
 
         .nameplate img {
@@ -750,7 +830,7 @@
             <button type="button" class="mode-tab @(joinIsDefault ? "" : "active")" data-mode="create">Oda Kur</button>
         </div>
 
-        <form method="post" asp-action="JoinRoom" asp-controller="Chat" id="joinForm" class="mode-form @(joinIsDefault ? "active" : "")">
+        <form method="post" asp-action="JoinRoom" asp-controller="Chat" id="joinForm" class="mode-form @(joinIsDefault ? "active" : "")" novalidate>
             <div class="field-group">
                 <input type="text" name="username" placeholder="Nickini yaz…" required maxlength="24" autocomplete="off" />
             </div>
@@ -763,7 +843,7 @@
             <button type="submit">Odaya Gir</button>
         </form>
 
-        <form method="post" asp-action="CreateRoom" asp-controller="Chat" id="createForm" class="mode-form @(joinIsDefault ? "" : "active")">
+        <form method="post" asp-action="CreateRoom" asp-controller="Chat" id="createForm" class="mode-form @(joinIsDefault ? "" : "active")" novalidate>
             <div class="field-group">
                 <input type="text" name="username" placeholder="Nickini yaz…" required maxlength="24" autocomplete="off" />
             </div>
@@ -806,12 +886,75 @@
                 const tabs = document.querySelectorAll(".mode-tab");
                 const forms = { join: document.getElementById("joinForm"), create: document.getElementById("createForm") };
 
+                // ---------- Alan doğrulama ----------
+                // Tarayıcının kendi "Lütfen bu alanı doldurun" balonu (ve Açık
+                // Frekans butonundaki prompt() penceresi) sayfanın geri kalanıyla
+                // hiç uyuşmuyordu; ayrıca Photino/WebView2'de bu yerleşik
+                // pencereler her zaman güvenilir çalışmıyor. Yerine alanın kendi
+                // altında beliren satır içi bir uyarı koyduk.
+
+                const FIELD_MESSAGES = {
+                    username: "Bir nick yaz",
+                    roomCode: "Oda kodunu gir"
+                };
+
+                function clearFieldError(group) {
+                    if (!group) return;
+                    group.classList.remove("is-invalid");
+                    const note = group.querySelector(".field-note");
+                    if (note) note.remove();
+                }
+
+                function showFieldError(input, message) {
+                    const group = input.closest(".field-group");
+                    if (!group) return;
+                    clearFieldError(group);
+                    // Aynı alana üst üste basılırsa sarsıntı animasyonunun
+                    // yeniden oynaması için tarayıcıyı bir reflow'a zorluyoruz.
+                    void group.offsetWidth;
+                    group.classList.add("is-invalid");
+                    const note = document.createElement("p");
+                    note.className = "field-note";
+                    note.textContent = message;
+                    group.appendChild(note);
+                }
+
+                function validateForm(form) {
+                    let firstInvalid = null;
+                    form.querySelectorAll("input[required]").forEach(function (input) {
+                        if (input.value.trim()) {
+                            clearFieldError(input.closest(".field-group"));
+                            return;
+                        }
+                        showFieldError(input, FIELD_MESSAGES[input.name] || "Bu alan gerekli");
+                        if (!firstInvalid) firstInvalid = input;
+                    });
+                    if (firstInvalid) firstInvalid.focus();
+                    return !firstInvalid;
+                }
+
+                // Kullanıcı yazmaya başlar başlamaz uyarı kalksın — hata durumu
+                // düzeltildiği anda yok olmalı, gönderime kadar beklememeli.
+                document.querySelectorAll(".mode-form input").forEach(function (input) {
+                    input.addEventListener("input", function () {
+                        if (input.value.trim()) clearFieldError(input.closest(".field-group"));
+                    });
+                });
+
+                Object.keys(forms).forEach(function (mode) {
+                    forms[mode].addEventListener("submit", function (e) {
+                        if (!validateForm(forms[mode])) e.preventDefault();
+                    });
+                });
+
                 tabs.forEach(function (tab) {
                     tab.addEventListener("click", function () {
                         tabs.forEach(function (t) { t.classList.remove("active"); });
                         tab.classList.add("active");
                         Object.keys(forms).forEach(function (mode) {
                             forms[mode].classList.toggle("active", mode === tab.dataset.mode);
+                            // Sekme değişince görünmeyen formdaki uyarılar temizlensin.
+                            forms[mode].querySelectorAll(".field-group").forEach(clearFieldError);
                         });
                         const firstInput = forms[tab.dataset.mode].querySelector("input");
                         if (firstInput) firstInput.focus();
@@ -823,11 +966,14 @@
 
                 document.getElementById("publicRoomBtn").addEventListener("click", function () {
                     const activeUsernameInput = document.querySelector(".mode-form.active input[name='username']");
-                    let name = activeUsernameInput ? activeUsernameInput.value.trim() : "";
+                    const name = activeUsernameInput ? activeUsernameInput.value.trim() : "";
                     if (!name) {
-                        name = (prompt("Genel Odaya katılmak için bir nick yaz:") || "").trim();
+                        // Eskiden burada prompt() açılıyordu. Artık kullanıcıyı
+                        // zaten ekranda duran nick alanına yönlendiriyoruz.
+                        if (activeUsernameInput) showFieldError(activeUsernameInput, FIELD_MESSAGES.username);
+                        if (activeUsernameInput) activeUsernameInput.focus();
+                        return;
                     }
-                    if (!name) return;
                     document.getElementById("publicRoomUsername").value = name;
                     document.getElementById("publicRoomForm").submit();
                 });
