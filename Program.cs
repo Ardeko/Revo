@@ -57,6 +57,18 @@ return;
 // ---------------------------------------------------------------------------
 static async Task RunServerAsync(string[] commandLineArgs)
 {
+    // appsettings.json varsayılan olarak "reloadOnChange: true" ile izleniyor;
+    // bu Linux'ta bir FileSystemWatcher/inotify instance'ı açıyor. Render'ın
+    // konteynerinde inotify instance kotası (128) art arda restart'larla
+    // tükeniyordu ve WebApplication.CreateBuilder() bu izlemeyi kurarken
+    // IOException fırlatıp uygulamayı DAHA AÇILMADAN çökertiyordu — Render bunu
+    // process crash olarak görüp yeniden başlatıyor, o da birkaç dakika içinde
+    // aynı şekilde çöküyordu (kesintili 503'lerin sebebi buydu). Container'da
+    // appsettings.json zaten canlı düzenlenmiyor (ayarlar env değişkenleriyle
+    // geliyor), o yüzden bu izlemeye hiç ihtiyaç yok — CreateBuilder
+    // çağrılmadan ÖNCE env değişkeniyle kapatıyoruz.
+    Environment.SetEnvironmentVariable("DOTNET_hostBuilder__reloadConfigOnChange", "false");
+
     var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     {
         Args = commandLineArgs,
