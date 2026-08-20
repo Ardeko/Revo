@@ -775,30 +775,232 @@
             background: rgba(46, 200, 170, 0.12);
         }
 
-        .screen-share-stage {
-            display: none;
-            margin: 0 0 14px;
-            border-radius: 12px;
-            overflow: hidden;
-            border: 1px solid var(--border, rgba(255,255,255,0.08));
-            background: #000;
+        /* ---------- Ekran paylaşımı sahnesi ----------
+           Eskiden paylaşım sohbet panelinin içinde 320px'lik bir kutuya
+           sıkışıyordu: hem video okunmuyor hem sohbet eziliyordu. Artık
+           paylaşım açıldığında sahne odanın kendi sütununu alıyor,
+           katılımcı + sohbet panelleri sağda tek kolona iniyor.
+
+           .room-side normalde "display: contents" — yani paylaşım yokken
+           ızgara bugünkü haliyle birebir aynı kalıyor (ray | katılımcılar |
+           sohbet). Paylaşım açılınca kolona dönüşüyor. */
+
+        .room-side { display: contents; }
+
+        .stage { display: none; }
+
+        .room.is-sharing .stage {
+            display: flex;
+            padding: 10px;
+            gap: 10px;
         }
 
-        .screen-share-stage.active { display: block; }
+        .room.is-sharing {
+            grid-template-columns: 64px minmax(0, 1fr) 300px;
+        }
 
-        .screen-share-stage video {
+        .room.is-sharing .room-side {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            min-height: 0;
+        }
+
+        .room.is-sharing .participants-panel {
+            flex: 0 1 auto;
+            max-height: 38%;
+        }
+
+        .room.is-sharing .chat-panel {
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+
+        /* Paylaşım varken pencerenin tamamını kullan — 1000px'lik okuma
+           genişliği sohbet için doğru, video için dar kalıyor. */
+        body.is-sharing .app { max-width: 1400px; }
+
+        .stage__bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+            padding: 0 2px;
+        }
+
+        .stage__dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--signal);
+            flex-shrink: 0;
+            animation: stage-pulse 2s ease-in-out infinite;
+        }
+
+        @@keyframes stage-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+
+        .stage__label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10.5px;
+            text-transform: uppercase;
+            letter-spacing: 1.6px;
+            color: var(--text-dim);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .stage__actions {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .stage__btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            height: 30px;
+            padding: 0 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-soft);
+            background: rgba(21, 26, 33, 0.6);
+            color: var(--text-dim);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 10.5px;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+
+        .stage__btn:hover {
+            background: var(--panel-3);
+            color: var(--text);
+            border-color: var(--border);
+        }
+
+        .stage__btn--icon {
+            width: 30px;
+            padding: 0;
+        }
+
+        .stage__btn--icon svg {
+            width: 15px;
+            height: 15px;
+        }
+
+        .stage__btn--stop {
+            border-color: rgba(193, 89, 74, 0.5);
+            color: var(--danger);
+        }
+
+        .stage__btn--stop:hover {
+            background: rgba(193, 89, 74, 0.12);
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+
+        .stage__screen {
+            position: relative;
+            flex: 1;
+            min-height: 0;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #000;
+            border: 1px solid var(--border-soft);
+        }
+
+        /* Video hiçbir zaman kırpılmıyor: kaynak ekranın oranı ne olursa
+           olsun tamamı görünsün diye "contain". */
+        .stage__screen video {
             display: block;
             width: 100%;
-            max-height: 320px;
+            height: 100%;
             object-fit: contain;
             background: #000;
+            cursor: pointer;
         }
 
-        .screen-share-label {
-            padding: 6px 10px;
-            font-size: 12px;
-            color: var(--text-faint);
-            background: var(--panel-2);
+        /* ---------- Tam ekran ----------
+           İki yol var: tarayıcının Fullscreen API'si ve o çalışmazsa
+           (bazı WebView2 sürümlerinde reddedilebiliyor) sayfayı kaplayan
+           kendi "sahte tam ekran" katmanımız. İkisi de aynı görünüyor. */
+
+        .room.is-sharing .stage:fullscreen,
+        .room.is-sharing .stage.is-faux-fullscreen {
+            position: fixed;
+            z-index: 400;
+            max-width: none;
+            border-radius: 0;
+            border: 0;
+            background: #000;
+            padding: 0;
+            gap: 0;
+        }
+
+        /* Gerçek tam ekranda eleman "top layer"a çıkıyor: başlık çubuğu
+           dahil her şeyin üstünde. */
+        .room.is-sharing .stage:fullscreen {
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Sahte tam ekranda ise başlık çubuğu z-index 100000 ile üstte
+           kalıyor; altına yerleşiyoruz ki pencere düğmeleri kapanmasın
+           ve kullanıcı kilitli hissetmesin. */
+        .room.is-sharing .stage.is-faux-fullscreen {
+            top: var(--tb-height, 0px);
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100vw;
+            height: calc(100vh - var(--tb-height, 0px));
+        }
+
+        .stage:fullscreen .stage__screen,
+        .stage.is-faux-fullscreen .stage__screen {
+            border-radius: 0;
+            border: 0;
+        }
+
+        /* Tam ekranda üst şerit videonun üstüne biniyor ve fare durunca
+           kayboluyor — kontroller görüntüden çalmasın. */
+        .stage:fullscreen .stage__bar,
+        .stage.is-faux-fullscreen .stage__bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 2;
+            padding: 14px 18px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, transparent 100%);
+            opacity: 1;
+            transition: opacity 0.3s ease;
+        }
+
+        .stage.is-idle .stage__bar { opacity: 0; pointer-events: none; }
+
+        .stage.is-idle .stage__screen video { cursor: none; }
+
+        /* Dar pencerede sahne üste, katılımcı + sohbet alta geçiyor. */
+        @@media (max-width: 900px) {
+            .room.is-sharing {
+                grid-template-columns: 64px minmax(0, 1fr);
+                grid-template-rows: minmax(180px, 42%) minmax(0, 1fr);
+            }
+
+            .room.is-sharing .room-rail { grid-row: 1 / -1; }
+            .room.is-sharing .stage { grid-column: 2; grid-row: 1; }
+            .room.is-sharing .room-side { grid-column: 2; grid-row: 2; }
+            body.is-sharing .app { max-width: none; }
         }
 
         .leave-button {
@@ -1014,28 +1216,51 @@
             <div class="count" id="participantCount">1 kişi</div>
         </header>
 
-        <main class="room">
+        <main class="room" id="roomLayout">
             <aside class="panel room-rail" id="roomRail">
                 <div class="room-rail-list" id="roomRailList"></div>
                 <a class="room-rail-add" href="/Chat/Login" title="Yeni oda kur / başka odaya katıl">+</a>
             </aside>
 
-            <section class="panel participants-panel">
-                <h2 class="panel-title">Frekansta</h2>
-                <ul class="participant-list" id="participantList"></ul>
+            <!-- Ekran paylaşımı sahnesi. Paylaşım yokken .room üzerindeki
+                 "is-sharing" sınıfı olmadığı için tamamen gizli; ızgara da
+                 eski üç sütunlu haline dönüyor. -->
+            <section class="panel stage" id="screenShareStage">
+                <div class="stage__bar">
+                    <span class="stage__dot" aria-hidden="true"></span>
+                    <span class="stage__label" id="screenShareLabel"></span>
+                    <div class="stage__actions">
+                        <button type="button" class="stage__btn stage__btn--stop" id="stageStopButton" hidden>Paylaşımı durdur</button>
+                        <button type="button" class="stage__btn stage__btn--icon" id="stageFullscreenButton" aria-label="Tam ekran" title="Tam ekran">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+                                <path d="M16 3h3a2 2 0 0 1 2 2v3"></path>
+                                <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+                                <path d="M8 21H5a2 2 0 0 1-2-2v-3"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="stage__screen">
+                    <video id="screenShareVideo" autoplay playsinline muted title="Tam ekran için çift tıkla"></video>
+                </div>
             </section>
 
-            <section class="panel chat-panel">
-                <h2 class="panel-title">Sohbet</h2>
-                <div class="screen-share-stage" id="screenShareStage">
-                    <div class="screen-share-label" id="screenShareLabel"></div>
-                </div>
-                <div class="messages" id="messagesList"></div>
-                <form class="message-form" id="messageForm">
-                    <input type="text" id="messageInput" placeholder="Mesaj yaz…" autocomplete="off" maxlength="500" />
-                    <button type="submit">Gönder</button>
-                </form>
-            </section>
+            <div class="room-side" id="roomSide">
+                <section class="panel participants-panel">
+                    <h2 class="panel-title">Frekansta</h2>
+                    <ul class="participant-list" id="participantList"></ul>
+                </section>
+
+                <section class="panel chat-panel">
+                    <h2 class="panel-title">Sohbet</h2>
+                    <div class="messages" id="messagesList"></div>
+                    <form class="message-form" id="messageForm">
+                        <input type="text" id="messageInput" placeholder="Mesaj yaz…" autocomplete="off" maxlength="500" />
+                        <button type="submit">Gönder</button>
+                    </form>
+                </section>
+            </div>
         </main>
 
         <footer class="controls-wrap">
@@ -1652,46 +1877,127 @@
                 btn.setAttribute("aria-label", noiseSuppressionEnabled ? "Gürültü engellemeyi kapat" : "Gürültü engellemeyi aç");
             }
 
-            // Uzak taraftan gelen ekran paylaşımı video track'ini sahneye (stage) bas.
-            // Şu an tek seferde bir kişinin paylaşımı gösteriliyor; ikinci bir paylaşım
-            // gelirse öncekinin yerine geçer (basit, tek "sunucu koltuğu" mantığı).
+            // ---------- Ekran paylaşımı sahnesi ----------
+            // Sahne odanın kendi sütununu alıyor (bkz. .room.is-sharing).
+            // Aynı anda tek bir paylaşım gösteriliyor; yeni gelen öncekinin
+            // yerine geçer — basit, tek "sunucu koltuğu" mantığı.
+            // Kendi paylaşımın da aynı sahnede önizleniyor; sahibi
+            // ayırt etmek için ownerConnectionId'ye "self" yazıyoruz.
+
+            const stageEl = document.getElementById("screenShareStage");
+            const stageVideoEl = document.getElementById("screenShareVideo");
+            const stageLabelEl = document.getElementById("screenShareLabel");
+            const stageStopButton = document.getElementById("stageStopButton");
+            const stageFullscreenButton = document.getElementById("stageFullscreenButton");
+
+            function openScreenShareStage(ownerId, labelText, stream, isSelf) {
+                stageVideoEl.srcObject = stream;
+                stageEl.dataset.ownerConnectionId = ownerId;
+                stageLabelEl.textContent = labelText;
+                stageStopButton.hidden = !isSelf;
+                document.getElementById("roomLayout").classList.add("is-sharing");
+                document.body.classList.add("is-sharing");
+            }
+
+            function clearScreenShareStage() {
+                exitStageFullscreen();
+                stageVideoEl.srcObject = null;
+                delete stageEl.dataset.ownerConnectionId;
+                stageLabelEl.textContent = "";
+                stageStopButton.hidden = true;
+                document.getElementById("roomLayout").classList.remove("is-sharing");
+                document.body.classList.remove("is-sharing");
+            }
+
             function showRemoteScreenShare(connectionId, username, stream, track) {
-                const stage = document.getElementById("screenShareStage");
-                const label = document.getElementById("screenShareLabel");
-                let videoEl = stage.querySelector("video");
-                if (!videoEl) {
-                    videoEl = document.createElement("video");
-                    videoEl.autoplay = true;
-                    videoEl.playsInline = true;
-                    stage.appendChild(videoEl);
-                }
-                videoEl.srcObject = stream;
-                stage.dataset.ownerConnectionId = connectionId;
-                label.textContent = `${username} ekranını paylaşıyor`;
-                stage.classList.add("active");
+                openScreenShareStage(connectionId, `${username} ekranını paylaşıyor`, stream, false);
 
                 track.addEventListener("ended", () => {
-                    if (stage.dataset.ownerConnectionId === connectionId) {
+                    if (stageEl.dataset.ownerConnectionId === connectionId) {
                         clearScreenShareStage();
                     }
                 });
             }
 
-            function clearScreenShareStage() {
-                const stage = document.getElementById("screenShareStage");
-                const videoEl = stage.querySelector("video");
-                if (videoEl) videoEl.srcObject = null;
-                delete stage.dataset.ownerConnectionId;
-                stage.classList.remove("active");
-                document.getElementById("screenShareLabel").textContent = "";
-            }
-
             function hideRemoteScreenShareIfFrom(connectionId) {
-                const stage = document.getElementById("screenShareStage");
-                if (stage.dataset.ownerConnectionId === connectionId) {
+                if (stageEl.dataset.ownerConnectionId === connectionId) {
                     clearScreenShareStage();
                 }
             }
+
+            // ---------- Tam ekran ----------
+            // Önce tarayıcının Fullscreen API'sini deniyoruz. Photino'nun
+            // WebView2'sinde bu çağrı bazı sürümlerde reddedilebiliyor;
+            // o durumda sayfayı kaplayan kendi katmanımıza düşüyoruz.
+            // Görünüm ikisinde de aynı (bkz. .is-faux-fullscreen).
+            let stageIdleTimer = null;
+
+            function stageIsFullscreen() {
+                return document.fullscreenElement === stageEl || stageEl.classList.contains("is-faux-fullscreen");
+            }
+
+            function syncFullscreenUi() {
+                const on = stageIsFullscreen();
+                stageFullscreenButton.setAttribute("aria-label", on ? "Tam ekrandan çık" : "Tam ekran");
+                stageFullscreenButton.title = on ? "Tam ekrandan çık (Esc)" : "Tam ekran";
+                if (!on) {
+                    stageEl.classList.remove("is-idle");
+                    clearTimeout(stageIdleTimer);
+                } else {
+                    armStageIdleTimer();
+                }
+            }
+
+            // Tam ekranda fare durunca üst şerit kaybolsun.
+            function armStageIdleTimer() {
+                clearTimeout(stageIdleTimer);
+                stageEl.classList.remove("is-idle");
+                if (!stageIsFullscreen()) return;
+                stageIdleTimer = setTimeout(() => stageEl.classList.add("is-idle"), 2500);
+            }
+
+            async function enterStageFullscreen() {
+                if (!stageEl.dataset.ownerConnectionId) return;
+                if (stageEl.requestFullscreen) {
+                    try {
+                        await stageEl.requestFullscreen({ navigationUI: "hide" });
+                        syncFullscreenUi();
+                        return;
+                    } catch (err) {
+                        console.warn("Fullscreen API reddedildi, kendi tam ekranımıza düşülüyor:", err);
+                    }
+                }
+                stageEl.classList.add("is-faux-fullscreen");
+                syncFullscreenUi();
+            }
+
+            function exitStageFullscreen() {
+                if (document.fullscreenElement === stageEl) {
+                    document.exitFullscreen().catch(() => { /* zaten çıkılmış olabilir */ });
+                }
+                stageEl.classList.remove("is-faux-fullscreen");
+                syncFullscreenUi();
+            }
+
+            function toggleStageFullscreen() {
+                if (stageIsFullscreen()) exitStageFullscreen();
+                else enterStageFullscreen();
+            }
+
+            stageFullscreenButton.addEventListener("click", toggleStageFullscreen);
+            stageVideoEl.addEventListener("dblclick", toggleStageFullscreen);
+            stageStopButton.addEventListener("click", () => { toggleScreenShare(); });
+            stageEl.addEventListener("mousemove", armStageIdleTimer);
+
+            // Tarayıcı tam ekrandan Esc ile çıkıldığında da düğmeyi güncelle.
+            document.addEventListener("fullscreenchange", syncFullscreenUi);
+
+            // Sahte tam ekranda Esc'i bizim yakalamamız gerekiyor.
+            document.addEventListener("keydown", (e) => {
+                if (e.key === "Escape" && stageEl.classList.contains("is-faux-fullscreen")) {
+                    exitStageFullscreen();
+                }
+            });
 
             // Track ekleme/çıkarma sonrası her peer için yeniden teklif (offer) çıkarır.
             // onnegotiationneeded yerine elle çağırdığımız için ilk bağlantı kurulumundaki
@@ -1723,6 +2029,10 @@
                 // kapatırsa da bizim tarafta temiz şekilde kapansın.
                 track.addEventListener("ended", () => stopScreenShare());
 
+                // Kendi paylaşımını da sahnede gör — neyi paylaştığını
+                // görmeden paylaşmak en sık yapılan hataydı (yanlış pencere).
+                openScreenShareStage("self", "Ekranını paylaşıyorsun", screenStream, true);
+
                 isScreenSharing = true;
                 const btn = document.getElementById("screenShareButton");
                 btn.setAttribute("aria-pressed", "true");
@@ -1740,6 +2050,13 @@
                 }
                 screenStream.getTracks().forEach(t => t.stop());
                 screenStream = null;
+
+                // Sahnede kendi önizlememiz duruyorsa kapat. Başkasının
+                // paylaşımı gösteriliyorsa ona dokunmuyoruz.
+                if (stageEl.dataset.ownerConnectionId === "self") {
+                    clearScreenShareStage();
+                }
+
                 await renegotiateAll();
 
                 isScreenSharing = false;

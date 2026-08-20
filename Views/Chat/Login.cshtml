@@ -1,5 +1,8 @@
 @{
     Layout = null;
+    // Açılışta seçili gelen sekme. Davet linkiyle (/oda/{kod}) gelindiğinde
+    // zaten "katıl" tarafı doğru olan, o yüzden varsayılan bu.
+    var joinIsDefault = true;
 }
 <!DOCTYPE html>
 <html lang="tr">
@@ -8,745 +11,591 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>REVO — Giriş</title>
     <link rel="icon" type="image/png" href="~/favicon.ico" />
+    <link rel="stylesheet" href="~/css/revo-fonts.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/cursor.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/titlebar.css" asp-append-version="true" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
+        /* ==========================================================
+           REVO — Giriş ekranı
+
+           Tam ekran sinematik video + sağa yaslı giriş paneli.
+           Palet bilinçli olarak tek renk: siyah zemin, beyaz tipografi,
+           yarı saydam beyaz yüzeyler. Yuvarlak köşe, gölge, parıltı yok.
+
+           Photino penceresi chromeless olduğu için üstte 34px'lik kendi
+           başlık çubuğumuz duruyor; hero yüksekliği ondan arta kalan
+           alana göre hesaplanıyor (--tb-height, titlebar.css içinde
+           tanımlı). Tarayıcıda titlebar.js bu değişkeni 0'a çekiyor,
+           böylece aynı hesap iki ortamda da doğru sonuç veriyor.
+
+           Fontlar CDN'den değil wwwroot/fonts'tan geliyor (revo-fonts.css)
+           — uygulama internetsiz de açılabilmeli.
+           ========================================================== */
+
         :root {
-            --bg: #0B0E13;
-            --bg-2: #10141C;
-            --panel: #151A21;
-            --panel-2: #1C232C;
-            --panel-3: #222A34;
-            --border: #262E38;
-            --border-soft: #1e252e;
-            --text: #EDEBE6;
-            --text-dim: #8A93A3;
-            --text-faint: #545E6C;
-            --amber: #E3A857;
-            --amber-soft: rgba(227, 168, 87, 0.14);
-            --signal: #3ECFC0;
-            --signal-soft: rgba(62, 207, 192, 0.14);
+            --bg: #000000;
+            --text: #ffffff;
+            --text-dim: rgba(255, 255, 255, 0.62);
+            --text-dimmer: rgba(255, 255, 255, 0.42);
+            --line: rgba(255, 255, 255, 0.14);
+            --line-strong: rgba(255, 255, 255, 0.26);
+            --fill-ghost: rgba(255, 255, 255, 0.05);
+            --fill-solid: rgba(255, 255, 255, 0.10);
             --danger: #C1594A;
+            --gutter: clamp(20px, 4.5vw, 88px);
+            --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
+            --font-display: 'Sora', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
         }
-
-        /* --- YENİ EKLENEN VİDEO VE ALTYAPI STİLLERİ --- */
-.bg-video {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    opacity: 0.25; /* Videonun parlaklığını form rahat okunsun diye kıstık */
-    z-index: 0;
-}
-
-.field {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    background: var(--bg);
-    overflow: hidden;
-}
-
-.field svg {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0.4;
-    z-index: 1; /* Videonun üstünde kalmasını sağlar */
-}
-
-.card {
-    position: relative;
-    z-index: 10; /* Kartı videonun en önüne çıkarır */
-}
-/* ---------------------------------------------- */
 
         * { box-sizing: border-box; }
 
         html, body {
             margin: 0;
-            min-height: 100%;
+            padding: 0;
             background: var(--bg);
             color: var(--text);
-            font-family: 'IBM Plex Sans', sans-serif;
-            overflow-x: hidden;
-        }
-
-        body {
-            position: relative;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 24px;
-        }
-
-        /* ---------- Ambient background: drifting frequency field ---------- */
-
-        .field {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            background:
-                radial-gradient(circle at 50% 8%, #1a2029 0%, var(--bg) 55%),
-                var(--bg);
+            font-family: var(--font-display);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
             overflow: hidden;
         }
 
-        .field svg {
+        body { padding-top: var(--tb-height); }
+
+        /* ---------------- Kabuk ---------------- */
+
+        .hero {
+            position: relative;
+            width: 100%;
+            height: calc(100vh - var(--tb-height));
+            overflow: hidden;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            isolation: isolate;
+        }
+
+        .hero__media {
             position: absolute;
             inset: 0;
+            z-index: -1;
+            background: #000;
+        }
+
+        .hero__video {
             width: 100%;
             height: 100%;
-            opacity: 0.55;
+            object-fit: cover;
+            object-position: center;
+            display: block;
         }
 
-        .scan-line {
-            stroke: var(--signal);
-            stroke-width: 1;
-            fill: none;
-            opacity: 0.16;
-        }
-
-        .scan-line.amber { stroke: var(--amber); opacity: 0.1; }
-
-        .scan-1 { animation: drift-x 26s linear infinite; }
-        .scan-2 { animation: drift-x 34s linear infinite reverse; }
-        .scan-3 { animation: drift-x 42s linear infinite; }
-
-        @@keyframes drift-x {
-            from { transform: translateX(-6%); }
-            to { transform: translateX(6%); }
-        }
-
-        .grain {
-            position: fixed;
-            inset: 0;
-            z-index: 1;
-            pointer-events: none;
-            opacity: 0.025;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-        }
-
-        /* ---------- Card ---------- */
-
-        .card {
-            position: relative;
-            z-index: 2;
-            width: min(400px, 100%);
-            text-align: center;
-            opacity: 0;
-            transform: translateY(14px);
-            animation: rise 0.7s cubic-bezier(.16,.8,.3,1) 0.05s forwards;
-        }
-
-        @@keyframes rise {
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .dial-wrap {
-    position: relative;
-    width: 132px;
-    height: 132px;
-    margin: 0 auto 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.dial-logo {
-    position: absolute;
-    width: 58px;
-    height: auto;
-    z-index: 3;
-    filter: drop-shadow(0 0 8px rgba(227, 168, 87, 0.4));
-    opacity: 0.85;
-    transition: transform 0.4s cubic-bezier(.16, 1, .3, 1), filter 0.3s ease;
-}
-
-.card:hover .dial-logo {
-    transform: scale(1.1) rotate(2deg);
-    filter: drop-shadow(0 0 15px var(--amber));
-    opacity: 1;
-}
-
-        .dial-halo {
+        /* Çift katmanlı karartma: yataydaki katman sağa doğru koyulaşıp
+           paneli okunur kılıyor, dikeydeki nav ile alt şeridi oturtuyor. */
+        .hero__scrim {
             position: absolute;
-            inset: -18px;
-            border-radius: 50%;
-            background: radial-gradient(circle, var(--signal-soft) 0%, transparent 70%);
-            animation: pulse-halo 3.2s ease-in-out infinite;
+            inset: 0;
+            background:
+                linear-gradient(to right, transparent 0%, transparent 45%, rgba(0,0,0,0.45) 72%, rgba(0,0,0,0.72) 100%),
+                linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 22%, transparent 78%, rgba(0,0,0,0.65) 100%);
         }
 
-        @@keyframes pulse-halo {
-            0%, 100% { transform: scale(0.92); opacity: 0.6; }
-            50% { transform: scale(1.06); opacity: 1; }
+        /* ---------------- Üst şerit ---------------- */
+
+        .nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 32px;
+            padding: clamp(14px, 1.7vw, 26px) var(--gutter);
         }
 
-        .dial { width: 100%; height: 100%; position: relative; z-index: 1; }
-
-        .dial circle.ring {
-            fill: none;
-            stroke: var(--border);
-            stroke-width: 1.5;
+        .nav__logo {
+            font-family: var(--font-display);
+            font-weight: 200;
+            font-size: clamp(18px, 1.5vw, 26px);
+            letter-spacing: 0.16em;
+            line-height: 1;
+            color: var(--text);
+            text-decoration: none;
         }
 
-        .dial circle.tick-ring {
-            fill: none;
-            stroke: var(--border-soft);
-            stroke-width: 1;
-            stroke-dasharray: 1 7.5;
+        .nav__cluster {
+            display: flex;
+            align-items: center;
+            gap: clamp(24px, 3vw, 56px);
         }
 
-        .dial circle.glow {
-            fill: none;
-            stroke: var(--amber);
-            stroke-width: 2;
-            stroke-linecap: round;
-            stroke-dasharray: 10 210;
-            transform-origin: 66px 66px;
-            animation: spin 10s linear infinite;
-            filter: drop-shadow(0 0 4px var(--amber));
+        .nav__links {
+            display: flex;
+            align-items: center;
+            gap: clamp(20px, 2.6vw, 48px);
         }
 
-        .dial .needle {
-            stroke: var(--signal);
-            stroke-width: 3;
-            stroke-linecap: round;
-            transform-origin: 66px 66px;
-            animation: sweep 3.4s ease-in-out infinite;
-            filter: drop-shadow(0 0 5px var(--signal));
+        .nav__links a,
+        .nav__links button {
+            font-family: var(--font-mono);
+            font-weight: 400;
+            font-size: clamp(11px, 0.78vw, 14px);
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--text);
+            text-decoration: none;
+            background: none;
+            border: 0;
+            padding: 0;
+            cursor: pointer;
+            transition: color 0.25s ease;
         }
 
-        .dial .needle-hub {
-            fill: var(--signal);
+        .nav__links a:hover,
+        .nav__links button:hover { color: var(--text-dim); }
+
+        .nav__cta {
+            font-family: var(--font-mono);
+            font-weight: 400;
+            font-size: clamp(11px, 0.78vw, 14px);
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--text);
+            background: none;
+            border: 1px solid var(--line-strong);
+            border-radius: 0;
+            padding: clamp(10px, 0.85vw, 15px) clamp(18px, 1.6vw, 28px);
+            cursor: pointer;
+            transition: background 0.25s ease, border-color 0.25s ease;
         }
 
-        @@keyframes spin {
-            to { transform: rotate(360deg); }
+        .nav__cta:hover {
+            background: var(--fill-ghost);
+            border-color: rgba(255, 255, 255, 0.5);
         }
 
-        @@keyframes sweep {
-            0%, 100% { transform: rotate(-32deg); }
-            50% { transform: rotate(32deg); }
+        /* ---------------- Panel ---------------- */
+
+        .hero__body {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 0 var(--gutter);
+            min-height: 0;
+            overflow-y: auto;
         }
 
-        @@media (prefers-reduced-motion: reduce) {
-            .dial .glow, .dial .needle, .dial-halo, .scan-1, .scan-2, .scan-3 { animation: none; }
-        }
-
-        h1 {
-            font-family: 'Big Shoulders Display', sans-serif;
-            font-size: 52px;
-            font-weight: 800;
-            letter-spacing: 3px;
-            margin: 0;
-            background: linear-gradient(180deg, var(--text) 0%, var(--amber) 140%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-        }
-
-        .tagline {
-            color: var(--text-dim);
-            font-size: 13px;
-            margin: 8px 0 34px;
-            font-family: 'IBM Plex Mono', monospace;
-            letter-spacing: 0.3px;
-        }
-
-        form {
+        .panel {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            align-items: flex-start;
+            width: min(34vw, 560px);
+            min-width: 380px;
         }
 
-        .field-group {
-            position: relative;
-        }
-
-        input[type="text"], input[type="password"] {
-            width: 100%;
-            padding: 15px 16px;
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            background: var(--panel-2);
-            color: var(--text);
-            font-size: 16px;
-            font-family: inherit;
-            text-align: center;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-        }
-
-        input[type="text"]:hover, input[type="password"]:hover {
-            border-color: #33404d;
-        }
-
-        input[type="text"]:focus, input[type="password"]:focus {
-            outline: none;
-            border-color: var(--amber);
-            box-shadow: 0 0 0 4px var(--amber-soft);
-            background: var(--panel-3);
-        }
-
-        input[type="text"]::placeholder, input[type="password"]::placeholder {
-            color: var(--text-faint);
-        }
-
-        .code-input {
-            font-family: 'IBM Plex Mono', monospace;
-            letter-spacing: 3px;
+        .chip {
+            font-family: var(--font-mono);
+            font-weight: 400;
+            font-size: clamp(11px, 0.72vw, 14px);
+            letter-spacing: 0.2em;
             text-transform: uppercase;
+            line-height: 1;
+            background: rgba(255, 255, 255, 0.09);
+            padding: clamp(9px, 0.8vw, 13px) clamp(14px, 1.1vw, 20px);
         }
 
-        /* ---------- Alan doğrulama (tarayıcının kendi balonu yerine) ----------
-           Tasarım fikri: uygulamanın zaten kullandığı "sinyal noktası" dilini
-           ödünç alıyoruz. Sohbet ekranında yeşil nokta = SİNYAL VAR, kırmızı
-           nokta = BAĞLANIYOR. Burada da eksik alan kırmızı, nabız gibi atan
-           küçük bir noktayla işaretleniyor — genel bir ⚠ ikonu yerine REVO'nun
-           kendi görsel diline ait bir işaret. */
-
-        .field-group.is-invalid input[type="text"],
-        .field-group.is-invalid input[type="password"] {
-            border-color: var(--danger);
-            background: rgba(193, 89, 74, 0.07);
-            animation: field-nudge 0.3s ease;
+        .panel__title {
+            font-family: var(--font-display);
+            font-weight: 200;
+            font-size: clamp(44px, 4.6vw, 84px);
+            letter-spacing: 0.03em;
+            line-height: 0.95;
+            margin: clamp(18px, 1.8vw, 34px) 0 0;
         }
 
-        .field-group.is-invalid input[type="text"]:focus,
-        .field-group.is-invalid input[type="password"]:focus {
-            border-color: var(--danger);
-            box-shadow: 0 0 0 4px rgba(193, 89, 74, 0.15);
-            background: rgba(193, 89, 74, 0.09);
+        .panel__tagline {
+            font-family: var(--font-mono);
+            font-weight: 300;
+            font-size: clamp(11px, 0.88vw, 15px);
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            line-height: 1.4;
+            color: var(--text-dim);
+            margin: clamp(10px, 1vw, 18px) 0 0;
         }
 
-        .field-note {
+        /* ---------------- Profil resmi ---------------- */
+
+        .avatar {
             display: flex;
             align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin: 8px 0 0;
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 11px;
-            font-weight: 500;
-            letter-spacing: 1.5px;
-            text-transform: uppercase;
-            color: var(--danger);
-            opacity: 0;
-            transform: translateY(-5px);
-            animation: note-in 0.22s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+            gap: 14px;
+            margin-top: clamp(18px, 2vw, 32px);
         }
 
-        .field-note::before {
-            content: "";
-            width: 5px;
-            height: 5px;
-            border-radius: 50%;
-            background: var(--danger);
+        .avatar__btn {
+            width: 52px;
+            height: 52px;
             flex: none;
-            animation: note-pulse 1.6s ease-in-out infinite;
-        }
-
-        @@keyframes note-in {
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        @@keyframes note-pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.25; }
-        }
-
-        @@keyframes field-nudge {
-            0%, 100% { transform: translateX(0); }
-            20% { transform: translateX(-4px); }
-            40% { transform: translateX(4px); }
-            60% { transform: translateX(-2px); }
-            80% { transform: translateX(2px); }
-        }
-
-        @@media (prefers-reduced-motion: reduce) {
-            .field-group.is-invalid input[type="text"],
-            .field-group.is-invalid input[type="password"],
-            .field-note,
-            .field-note::before {
-                animation: none;
-            }
-
-            .field-note {
-                opacity: 1;
-                transform: none;
-            }
-        }
-
-        /* ---------- Profil resmi seçici ---------- */
-
-        .avatar-picker {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin: 0 0 20px;
-        }
-
-        .avatar-preview {
-            flex-shrink: 0;
-            width: 56px;
-            height: 56px;
-            border-radius: 50%;
-            border: 1.5px dashed var(--border);
-            background: var(--panel-2);
-            color: var(--text-faint);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-family: 'IBM Plex Sans', sans-serif;
-            font-size: 20px;
-            font-weight: 700;
-            cursor: pointer;
+            background: var(--fill-ghost);
+            border: 1px solid var(--line-strong);
+            border-radius: 0;
             padding: 0;
             overflow: hidden;
-            transition: border-color 0.2s ease;
+            cursor: pointer;
+            color: var(--text);
+            font-family: var(--font-display);
+            font-weight: 300;
+            font-size: 20px;
+            line-height: 1;
+            transition: border-color 0.25s ease, background 0.25s ease;
         }
 
-        .avatar-preview:hover {
-            border-color: var(--amber);
-        }
+        .avatar__btn:hover { border-color: rgba(255, 255, 255, 0.5); }
 
-        .avatar-preview img {
+        .avatar__btn img {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
 
-        .avatar-picker-meta {
+        .avatar__meta {
             display: flex;
             flex-direction: column;
             align-items: flex-start;
-            gap: 4px;
+            gap: 5px;
         }
 
-        .avatar-picker-label {
+        .avatar__label,
+        .avatar__clear {
+            font-family: var(--font-mono);
+            font-weight: 400;
+            font-size: clamp(10px, 0.66vw, 12px);
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+        }
+
+        .avatar__label { color: var(--text-dimmer); }
+
+        .avatar__clear {
             color: var(--text-dim);
-            font-size: 12.5px;
-            font-family: 'IBM Plex Mono', monospace;
-        }
-
-        .avatar-clear-btn {
-            background: transparent;
-            border: none;
-            color: var(--danger);
-            font-size: 11.5px;
-            font-family: inherit;
-            cursor: pointer;
+            background: none;
+            border: 0;
             padding: 0;
+            cursor: pointer;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            transition: color 0.25s ease;
         }
 
-        /* ---------- Mod sekmeleri (Odaya Katıl / Oda Kur) ---------- */
+        .avatar__clear:hover { color: var(--text); }
 
-        .mode-toggle {
+        /* ---------------- Sekmeler ---------------- */
+
+        .modes {
             display: flex;
-            gap: 6px;
-            padding: 4px;
-            margin-bottom: 16px;
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 12px;
+            width: 100%;
+            margin-top: clamp(18px, 2vw, 32px);
+            border: 1px solid var(--line);
         }
 
         .mode-tab {
             flex: 1;
-            padding: 10px 12px;
-            border: none;
-            border-radius: 9px;
-            background: transparent;
-            color: var(--text-dim);
-            font-family: inherit;
-            font-size: 13px;
-            font-weight: 600;
+            font-family: var(--font-mono);
+            font-weight: 400;
+            font-size: clamp(11px, 0.74vw, 13px);
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--text-dimmer);
+            background: none;
+            border: 0;
+            border-radius: 0;
+            padding: clamp(11px, 1vw, 16px) 10px;
             cursor: pointer;
-            transition: background 0.2s ease, color 0.2s ease;
+            transition: background 0.25s ease, color 0.25s ease;
         }
 
+        .mode-tab + .mode-tab { border-left: 1px solid var(--line); }
+
+        .mode-tab:hover { color: var(--text); }
+
         .mode-tab.active {
-            background: var(--panel-3);
-            color: var(--amber);
-            box-shadow: inset 0 0 0 1px var(--border-soft);
+            background: var(--fill-solid);
+            color: var(--text);
         }
+
+        /* ---------------- Form ---------------- */
+
+        .form-error {
+            width: 100%;
+            margin-top: clamp(14px, 1.5vw, 24px);
+            padding: 11px 15px;
+            border-left: 2px solid var(--danger);
+            background: rgba(193, 89, 74, 0.10);
+        }
+
+        .form-error p {
+            margin: 0;
+            font-family: var(--font-mono);
+            font-weight: 400;
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            line-height: 1.5;
+            color: var(--text);
+        }
+
+        .form-error p + p { margin-top: 6px; }
 
         .mode-form {
             display: none;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .mode-form.active {
-            display: flex;
-        }
-
-        .form-error {
-            background: rgba(193, 89, 74, 0.12);
-            border: 1px solid var(--danger);
-            border-radius: 10px;
-            padding: 10px 14px;
-            margin-bottom: 14px;
-            color: var(--danger);
-            font-size: 13px;
-            text-align: left;
-        }
-
-        .form-error p { margin: 2px 0; }
-
-        /* ---------- Hızlı eylemler: Açık Frekans + Aktif Odalar ---------- */
-
-        .quick-actions {
-            margin-top: 22px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .divider {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin: 2px 0 4px;
-        }
-
-        .divider::before,
-        .divider::after {
-            content: "";
-            flex: 1;
-            height: 1px;
-            background: var(--border-soft);
-        }
-
-        .divider span {
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 10px;
-            letter-spacing: 1.5px;
-            text-transform: uppercase;
-            color: var(--text-faint);
-        }
-
-        .public-room-btn {
-            position: relative;
             width: 100%;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 13px 16px;
-            border-radius: 14px;
-            border: 1px solid var(--signal);
-            background: linear-gradient(135deg, var(--signal-soft) 0%, rgba(62, 207, 192, 0.04) 100%);
-            color: var(--text);
-            font-family: inherit;
-            cursor: pointer;
-            overflow: hidden;
-            text-align: left;
-            transition: border-color 0.2s ease, background 0.2s ease, transform 0.12s ease, box-shadow 0.2s ease;
-        }
-
-        .public-room-btn::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%);
-            transform: translateX(-130%);
-            transition: transform 0.7s ease;
-        }
-
-        .public-room-btn:hover {
-            border-color: var(--signal);
-            box-shadow: 0 0 0 4px var(--signal-soft), 0 6px 18px -8px rgba(62, 207, 192, 0.5);
-            transform: translateY(-1px);
-        }
-
-        .public-room-btn:hover::after { transform: translateX(130%); }
-        .public-room-btn:active { transform: translateY(0) scale(0.98); }
-
-        .live-dot {
-            position: relative;
-            flex-shrink: 0;
-            width: 9px;
-            height: 9px;
-            border-radius: 50%;
-            background: var(--signal);
-            box-shadow: 0 0 8px var(--signal);
-        }
-
-        .live-dot::after {
-            content: "";
-            position: absolute;
-            inset: -6px;
-            border-radius: 50%;
-            border: 1px solid var(--signal);
-            opacity: 0.6;
-            animation: live-ping 2s ease-out infinite;
-        }
-
-        @@keyframes live-ping {
-            0% { transform: scale(0.5); opacity: 0.7; }
-            100% { transform: scale(2.2); opacity: 0; }
-        }
-
-        .btn-label {
-            flex: 1;
-            display: flex;
             flex-direction: column;
-            gap: 1px;
-            min-width: 0;
+            gap: clamp(12px, 1.2vw, 18px);
+            margin-top: clamp(22px, 2.4vw, 40px);
         }
 
-        .btn-title {
-            font-size: 14px;
-            font-weight: 700;
+        .mode-form.active { display: flex; }
+
+        .field-group { position: relative; }
+
+        .field-group input {
+            width: 100%;
+            background: transparent;
             color: var(--text);
+            border: 0;
+            border-bottom: 1px solid var(--line-strong);
+            border-radius: 0;
+            padding: 0 2px clamp(10px, 0.9vw, 15px);
+            font-family: var(--font-display);
+            font-weight: 300;
+            font-size: clamp(15px, 0.95vw, 18px);
+            outline: none;
+            transition: border-color 0.25s ease;
         }
 
-        .btn-sub {
+        .field-group input::placeholder {
+            color: var(--text-dim);
+            transition: color 0.25s ease;
+        }
+
+        .field-group input:focus { border-bottom-color: rgba(255, 255, 255, 0.85); }
+        .field-group input:focus::placeholder { color: var(--text-dimmer); }
+
+        /* Oda kodu her zaman büyük harf ve monospace — kod gibi okunsun.
+           Sunucu tarafı da kodu ToUpperInvariant ile normalize ettiği için
+           (RoomManager.NormalizeCode) bu sadece görsel bir dokunuş. */
+        .field-group input.code-input {
+            font-family: var(--font-mono);
+            font-weight: 400;
+            font-size: clamp(14px, 0.88vw, 16px);
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+        }
+
+        .field-group input.code-input::placeholder {
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+        }
+
+        /* WebView2 otomatik doldurmada alanı beyaza boyuyor; iç gölge
+           hilesiyle zemini siyah tutuyoruz. */
+        .field-group input:-webkit-autofill,
+        .field-group input:-webkit-autofill:hover,
+        .field-group input:-webkit-autofill:focus {
+            -webkit-text-fill-color: var(--text);
+            -webkit-box-shadow: 0 0 0 1000px #000 inset;
+            transition: background-color 5000s ease-in-out 0s;
+        }
+
+        .field-group.is-invalid input { border-bottom-color: var(--danger); }
+
+        .field-note {
+            margin: 8px 0 0;
+            font-family: var(--font-mono);
+            font-weight: 400;
             font-size: 11px;
-            color: var(--text-dim);
-            font-family: 'IBM Plex Mono', monospace;
-            letter-spacing: 0.2px;
-        }
-
-        .btn-go {
-            flex-shrink: 0;
-            color: var(--signal);
-            font-size: 16px;
-            transition: transform 0.2s ease;
-        }
-
-        .public-room-btn:hover .btn-go { transform: translateX(4px); }
-
-        .rooms-link-btn {
-            position: relative;
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 9px;
-            padding: 12px 16px;
-            border-radius: 14px;
-            border: 1px solid var(--border);
-            background: var(--panel-2);
-            color: var(--text-dim);
-            font-weight: 600;
-            font-size: 13px;
-            font-family: inherit;
-            text-decoration: none;
-            overflow: hidden;
-            transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease, transform 0.12s ease;
-        }
-
-        .rooms-link-btn::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.08) 50%, transparent 70%);
-            transform: translateX(-130%);
-            transition: transform 0.7s ease;
-        }
-
-        .rooms-link-btn:hover {
-            border-color: var(--amber);
-            color: var(--amber);
-            background: var(--panel-3);
-            transform: translateY(-1px);
-        }
-
-        .rooms-link-btn:hover::after { transform: translateX(130%); }
-        .rooms-link-btn:active { transform: translateY(0) scale(0.98); }
-
-        .rooms-icon { font-size: 13px; opacity: 0.85; }
-
-        .rooms-link-btn .arrow { transition: transform 0.2s ease; }
-        .rooms-link-btn:hover .arrow { transform: translateX(4px); }
-
-        button[type="submit"] {
-            position: relative;
-            padding: 15px 16px;
-            border-radius: 12px;
-            border: none;
-            background: var(--amber);
-            color: #241a0d;
-            font-weight: 700;
-            font-size: 15px;
-            letter-spacing: 0.5px;
-            cursor: pointer;
-            transition: filter 0.15s, transform 0.15s;
-            overflow: hidden;
-        }
-
-        button[type="submit"]::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.35) 50%, transparent 70%);
-            transform: translateX(-120%);
-            transition: transform 0.6s ease;
-        }
-
-        button[type="submit"]:hover::after { transform: translateX(120%); }
-        button[type="submit"]:hover { filter: brightness(1.08); }
-        button[type="submit"]:active { transform: scale(0.98); filter: brightness(0.95); }
-
-        /* ---------- Ardeko Studios nameplate (stamped like hardware badge) ---------- */
-
-        .nameplate {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            margin-top: 40px;
-            padding: 7px 14px 7px 9px;
-            border: 1px solid var(--border-soft);
-            border-radius: 999px;
-            background: rgba(28, 35, 44, 0.5);
-            backdrop-filter: blur(6px);
-            opacity: 0;
-            transform: translateY(8px);
-            animation: rise 0.6s cubic-bezier(.16,.8,.3,1) 0.55s forwards;
-            text-decoration: none;
-            transition: border-color 0.2s ease, background 0.2s ease;
-        }
-
-        .nameplate:hover {
-            border-color: var(--amber);
-            background: rgba(28, 35, 44, 0.85);
-        }
-
-        .nameplate img {
-            height: 16px;
-            width: auto;
-            display: block;
-            opacity: 0.85;
-        }
-
-        .nameplate .plate-text {
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 10px;
-            letter-spacing: 1.6px;
+            letter-spacing: 0.14em;
             text-transform: uppercase;
-            color: var(--text-faint);
+            color: var(--danger);
+            animation: note-in 0.3s var(--ease-premium);
         }
 
-        .nameplate .plate-text b {
-            color: var(--text-dim);
-            font-weight: 600;
+        @@keyframes note-in {
+            from { opacity: 0; transform: translateY(-4px); }
+            to   { opacity: 1; transform: translateY(0); }
         }
 
-        .nameplate:hover .plate-text,
-        .nameplate:hover .plate-text b {
+        /* ---------------- Butonlar ---------------- */
+
+        .btn {
+            width: 100%;
+            display: block;
+            text-align: center;
+            border: 0;
+            border-radius: 0;
+            padding: clamp(14px, 1.35vw, 22px) 20px;
+            font-family: var(--font-mono);
+            font-weight: 400;
+            font-size: clamp(11px, 0.78vw, 14px);
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.25s ease, color 0.25s ease;
+        }
+
+        .btn--solid {
+            background: var(--fill-solid);
+            color: var(--text);
+        }
+
+        .btn--solid:hover { background: rgba(255, 255, 255, 0.17); }
+
+        .btn--ghost {
+            background: var(--fill-ghost);
+            color: var(--text-dimmer);
+            margin-top: clamp(10px, 1vw, 16px);
+        }
+
+        .btn--ghost:hover {
+            background: rgba(255, 255, 255, 0.09);
+            color: var(--text);
+        }
+
+        .panel__alt {
+            align-self: center;
+            margin-top: clamp(16px, 1.8vw, 30px);
+            font-family: var(--font-mono);
+            font-weight: 400;
+            font-size: clamp(11px, 0.74vw, 14px);
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--text);
+            text-decoration: none;
+            transition: color 0.25s ease;
+        }
+
+        .panel__alt:hover {
             color: var(--text-dim);
+            text-decoration: underline;
+            text-underline-offset: 4px;
+        }
+
+        /* ---------------- Alt şerit ---------------- */
+
+        .legal {
+            border-top: 1px solid var(--line);
+            padding: clamp(12px, 1.3vw, 22px) var(--gutter);
+            text-align: center;
+        }
+
+        .legal__text {
+            margin: 0;
+            font-family: var(--font-display);
+            font-weight: 300;
+            font-size: clamp(11px, 0.76vw, 14px);
+            line-height: 1.5;
+            color: var(--text-dim);
+        }
+
+        .legal__text a {
+            color: var(--text);
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            text-decoration-thickness: 1px;
+            transition: color 0.25s ease;
+        }
+
+        .legal__text a:hover { color: var(--text-dim); }
+
+        /* ---------------- Odak ---------------- */
+
+        .nav__logo:focus-visible,
+        .nav__links a:focus-visible,
+        .nav__links button:focus-visible,
+        .nav__cta:focus-visible,
+        .avatar__btn:focus-visible,
+        .avatar__clear:focus-visible,
+        .mode-tab:focus-visible,
+        .btn:focus-visible,
+        .panel__alt:focus-visible,
+        .legal__text a:focus-visible {
+            outline: 1px solid rgba(255, 255, 255, 0.7);
+            outline-offset: 3px;
+        }
+
+        /* Alanlarda kutu şeklinde bir odak halkası alt çizgi estetiğini
+           bozuyor; odak zaten alt çizginin beyazlamasıyla belli oluyor. */
+        .field-group input:focus-visible { outline: none; }
+
+        /* ---------------- Duyarlılık ----------------
+           Mobil hamburger menü bilerek yok: bu ekran 1320x860'lık sabit bir
+           masaüstü penceresinde açılıyor. Yine de pencere küçültülürse
+           panel ortalanıp genişliyor. */
+
+        @@media (max-width: 1100px) {
+            .panel {
+                width: min(70vw, 520px);
+                min-width: 0;
+            }
+        }
+
+        @@media (max-width: 820px) {
+            .hero__scrim {
+                background: linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.25) 30%, rgba(0,0,0,0.75) 100%);
+            }
+
+            .hero__body { justify-content: center; }
+
+            .panel {
+                width: 100%;
+                align-items: stretch;
+            }
+
+            .chip { align-self: flex-start; }
+            .nav__links { gap: 20px; }
+        }
+
+        @@media (max-width: 560px) {
+            .nav__links { display: none; }
+            .panel__title { font-size: clamp(40px, 13vw, 60px); }
+        }
+
+        /* Alçak pencere: panelin kaymaması için her şey biraz sıkışıyor. */
+        @@media (max-height: 720px) {
+            .panel__title { font-size: clamp(34px, 3.6vw, 52px); }
+            .panel__tagline { margin-top: 8px; }
+            .avatar { margin-top: 14px; }
+            .avatar__btn { width: 44px; height: 44px; font-size: 17px; }
+            .modes { margin-top: 14px; }
+            .mode-tab { padding: 10px; }
+            .mode-form { margin-top: 16px; gap: 10px; }
+            .btn { padding: 12px 20px; }
+            .btn--ghost { margin-top: 8px; }
+            .panel__alt { margin-top: 14px; }
+            .nav { padding: 10px var(--gutter); }
+            .legal { padding: 10px var(--gutter); }
+            .legal__text { font-size: 11px; }
+        }
+
+        @@media (prefers-reduced-motion: reduce) {
+            .hero__video { display: none; }
+
+            .hero__media {
+                background-image: url('/media/echoid-poster.png');
+                background-size: cover;
+                background-position: center;
+            }
+
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
         }
     </style>
 </head>
-<body>
+<body class="revo-with-titlebar">
     <div class="revo-titlebar">
         <div class="revo-titlebar__drag">
             <span class="revo-titlebar__logo" aria-hidden="true"></span>
@@ -768,297 +617,305 @@
         </div>
     </div>
 
-    <div class="field" aria-hidden="true">
-        <video autoplay muted loop playsinline class="bg-video">
-            <source src="/revo-promo.mp4" type="video/mp4">
-            <source src="/revo-promo.webm" type="video/webm">
-        </video>
-
-        <svg viewBox="0 0 800 800" preserveAspectRatio="none">
-            <path class="scan-line scan-1" d="M -50 620 Q 200 560 400 620 T 850 620" />
-            <path class="scan-line scan-2 amber" d="M -50 180 Q 220 240 400 180 T 850 180" />
-            <path class="scan-line scan-3" d="M -50 400 Q 200 360 400 400 T 850 400" />
-        </svg>
-    </div>
-    
-    <div class="grain" aria-hidden="true"></div>
-
-    <div class="card">
-        <div class="dial-wrap">
-            <div class="dial-halo" aria-hidden="true"></div>
-            <img src="/img/ardeko.png" class="dial-logo" alt="Ardeko" />
-            <svg class="dial" viewBox="0 0 132 132" aria-hidden="true">
-                <circle class="tick-ring" cx="66" cy="66" r="58" />
-                <circle class="ring" cx="66" cy="66" r="52" />
-                <circle class="glow" cx="66" cy="66" r="52" />
-                <line class="needle" x1="66" y1="66" x2="66" y2="20" />
-                <circle class="needle-hub" cx="66" cy="66" r="4" />
-            </svg>
+    <section class="hero">
+        <div class="hero__media" aria-hidden="true">
+            <video class="hero__video" autoplay muted loop playsinline preload="auto" poster="/media/echoid-poster.png">
+                <source src="/media/echoid-hero.mp4" type="video/mp4" />
+            </video>
+            <div class="hero__scrim"></div>
         </div>
-        
-        <h1>REVO</h1>
-        <p class="tagline">Arkadaşlarınla aynı frekansta buluş</p>
 
-        <div class="avatar-picker">
-            <button type="button" class="avatar-preview" id="avatarPreviewBtn" aria-label="Profil resmi seç">
-                <span id="avatarPreviewInitial">?</span>
-                <img id="avatarPreviewImg" alt="" style="display:none;" />
-            </button>
-            <input type="file" id="avatarFileInput" accept="image/*" hidden />
-            <div class="avatar-picker-meta">
-                <span class="avatar-picker-label">Profil resmi (opsiyonel)</span>
-                <button type="button" class="avatar-clear-btn" id="avatarClearBtn" style="display:none;">Kaldır</button>
+        <header class="nav">
+            <a class="nav__logo" asp-action="Login" asp-controller="Chat">REVO</a>
+            <div class="nav__cluster">
+                <div class="nav__links">
+                    <a asp-action="Rooms" asp-controller="Chat">Aktif odalar</a>
+                    <button type="button" class="js-public-room">Açık frekans</button>
+                </div>
+                <button type="button" class="nav__cta" data-mode-jump="create">Oda kur</button>
             </div>
-        </div>
+        </header>
 
-        @{
-            var joinIsDefault = true;
-        }
+        <div class="hero__body">
+            <div class="panel">
+                <span class="chip">[ Frekans girişi ]</span>
 
-        @if (!ViewData.ModelState.IsValid)
-        {
-            <div class="form-error">
-                @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+                <h1 class="panel__title">REVO</h1>
+
+                <p class="panel__tagline">Arkadaşlarınla aynı frekansta buluş.</p>
+
+                <div class="avatar">
+                    <button type="button" class="avatar__btn" id="avatarPreviewBtn" aria-label="Profil resmi seç">
+                        <span id="avatarPreviewInitial">?</span>
+                        <img id="avatarPreviewImg" alt="" style="display:none;" />
+                    </button>
+                    <input type="file" id="avatarFileInput" accept="image/*" hidden />
+                    <div class="avatar__meta">
+                        <span class="avatar__label">Profil resmi (opsiyonel)</span>
+                        <button type="button" class="avatar__clear" id="avatarClearBtn" style="display:none;">Kaldır</button>
+                    </div>
+                </div>
+
+                <div class="modes" role="tablist">
+                    <button type="button" class="mode-tab @(joinIsDefault ? "active" : "")" data-mode="join">Odaya katıl</button>
+                    <button type="button" class="mode-tab @(joinIsDefault ? "" : "active")" data-mode="create">Oda kur</button>
+                </div>
+
+                @if (!ViewData.ModelState.IsValid)
                 {
-                    <p>@error.ErrorMessage</p>
-                }
-            </div>
-        }
-
-        <div class="mode-toggle" role="tablist">
-            <button type="button" class="mode-tab @(joinIsDefault ? "active" : "")" data-mode="join">Odaya Katıl</button>
-            <button type="button" class="mode-tab @(joinIsDefault ? "" : "active")" data-mode="create">Oda Kur</button>
-        </div>
-
-        <form method="post" asp-action="JoinRoom" asp-controller="Chat" id="joinForm" class="mode-form @(joinIsDefault ? "active" : "")" novalidate>
-            <div class="field-group">
-                <input type="text" name="username" placeholder="Nickini yaz…" required maxlength="24" autocomplete="off" />
-            </div>
-            <div class="field-group">
-                <input type="text" name="roomCode" class="code-input" placeholder="Oda kodu" required maxlength="8" autocomplete="off" value="@ViewBag.PrefilledRoomCode" />
-            </div>
-            <div class="field-group">
-                <input type="password" name="password" placeholder="Şifre (varsa)" autocomplete="off" />
-            </div>
-            <button type="submit">Odaya Gir</button>
-        </form>
-
-        <form method="post" asp-action="CreateRoom" asp-controller="Chat" id="createForm" class="mode-form @(joinIsDefault ? "" : "active")" novalidate>
-            <div class="field-group">
-                <input type="text" name="username" placeholder="Nickini yaz…" required maxlength="24" autocomplete="off" />
-            </div>
-            <div class="field-group">
-                <input type="password" name="password" placeholder="Şifre koy (opsiyonel)" autocomplete="off" />
-            </div>
-            <button type="submit">Oda Kur</button>
-        </form>
-
-        <div class="quick-actions">
-            <div class="divider"><span>ya da</span></div>
-
-            <button type="button" class="public-room-btn" id="publicRoomBtn">
-                <span class="live-dot" aria-hidden="true"></span>
-                <span class="btn-label">
-                    <span class="btn-title">Açık Frekansa Katıl</span>
-                    <span class="btn-sub">Herkese açık, her an aktif</span>
-                </span>
-                <span class="btn-go" aria-hidden="true">→</span>
-            </button>
-
-            <a class="rooms-link-btn" asp-action="Rooms" asp-controller="Chat">
-                <span class="rooms-icon" aria-hidden="true">📡</span>
-                <span>Aktif Odaları Gör</span>
-                <span class="arrow" aria-hidden="true">→</span>
-            </a>
-        </div>
-
-        <!-- Açık Frekans'a tek tıkla katılmak için: kullanıcı adını join formundan alıp
-             oda kodunu GENEL olarak sabitleyip aynı formu gönderiyor. Açık Frekans hiç
-             şifreli olmadığı için ekstra bir adım gerekmiyor. -->
-        <form method="post" asp-action="JoinRoom" asp-controller="Chat" id="publicRoomForm" style="display:none;">
-            <input type="hidden" name="roomCode" value="GENEL" />
-            <input type="hidden" name="username" id="publicRoomUsername" />
-        </form>
-        <script src="~/js/cursor.js" asp-append-version="true"></script>
-        <script src="~/js/titlebar.js" asp-append-version="true"></script>
-        <script>
-            (function () {
-                const tabs = document.querySelectorAll(".mode-tab");
-                const forms = { join: document.getElementById("joinForm"), create: document.getElementById("createForm") };
-
-                // ---------- Alan doğrulama ----------
-                // Tarayıcının kendi "Lütfen bu alanı doldurun" balonu (ve Açık
-                // Frekans butonundaki prompt() penceresi) sayfanın geri kalanıyla
-                // hiç uyuşmuyordu; ayrıca Photino/WebView2'de bu yerleşik
-                // pencereler her zaman güvenilir çalışmıyor. Yerine alanın kendi
-                // altında beliren satır içi bir uyarı koyduk.
-
-                const FIELD_MESSAGES = {
-                    username: "Bir nick yaz",
-                    roomCode: "Oda kodunu gir"
-                };
-
-                function clearFieldError(group) {
-                    if (!group) return;
-                    group.classList.remove("is-invalid");
-                    const note = group.querySelector(".field-note");
-                    if (note) note.remove();
-                }
-
-                function showFieldError(input, message) {
-                    const group = input.closest(".field-group");
-                    if (!group) return;
-                    clearFieldError(group);
-                    // Aynı alana üst üste basılırsa sarsıntı animasyonunun
-                    // yeniden oynaması için tarayıcıyı bir reflow'a zorluyoruz.
-                    void group.offsetWidth;
-                    group.classList.add("is-invalid");
-                    const note = document.createElement("p");
-                    note.className = "field-note";
-                    note.textContent = message;
-                    group.appendChild(note);
-                }
-
-                function validateForm(form) {
-                    let firstInvalid = null;
-                    form.querySelectorAll("input[required]").forEach(function (input) {
-                        if (input.value.trim()) {
-                            clearFieldError(input.closest(".field-group"));
-                            return;
+                    <div class="form-error">
+                        @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+                        {
+                            <p>@error.ErrorMessage</p>
                         }
-                        showFieldError(input, FIELD_MESSAGES[input.name] || "Bu alan gerekli");
-                        if (!firstInvalid) firstInvalid = input;
-                    });
-                    if (firstInvalid) firstInvalid.focus();
-                    return !firstInvalid;
+                    </div>
                 }
 
-                // Kullanıcı yazmaya başlar başlamaz uyarı kalksın — hata durumu
-                // düzeltildiği anda yok olmalı, gönderime kadar beklememeli.
-                document.querySelectorAll(".mode-form input").forEach(function (input) {
-                    input.addEventListener("input", function () {
-                        if (input.value.trim()) clearFieldError(input.closest(".field-group"));
-                    });
+                <form method="post" asp-action="JoinRoom" asp-controller="Chat" id="joinForm" class="mode-form @(joinIsDefault ? "active" : "")" novalidate>
+                    <div class="field-group">
+                        <input type="text" name="username" placeholder="Nickini yaz…" required maxlength="24" autocomplete="off" />
+                    </div>
+                    <div class="field-group">
+                        <input type="text" name="roomCode" class="code-input" placeholder="Oda kodu" required maxlength="8" autocomplete="off" value="@ViewBag.PrefilledRoomCode" />
+                    </div>
+                    <div class="field-group">
+                        <input type="password" name="password" placeholder="Şifre (varsa)" autocomplete="off" />
+                    </div>
+                    <button type="submit" class="btn btn--solid">Odaya gir</button>
+                </form>
+
+                <form method="post" asp-action="CreateRoom" asp-controller="Chat" id="createForm" class="mode-form @(joinIsDefault ? "" : "active")" novalidate>
+                    <div class="field-group">
+                        <input type="text" name="username" placeholder="Nickini yaz…" required maxlength="24" autocomplete="off" />
+                    </div>
+                    <div class="field-group">
+                        <input type="password" name="password" placeholder="Şifre koy (opsiyonel)" autocomplete="off" />
+                    </div>
+                    <button type="submit" class="btn btn--solid">Oda kur</button>
+                </form>
+
+                <button type="button" class="btn btn--ghost js-public-room">Açık frekansa katıl</button>
+
+                <a class="panel__alt" asp-action="Rooms" asp-controller="Chat">Aktif odaları gör</a>
+
+                <!-- Açık Frekans'a tek tıkla katılmak için: kullanıcı adını aktif
+                     formdan alıp oda kodunu GENEL olarak sabitleyip bu formu
+                     gönderiyor. Açık Frekans hiç şifreli olmadığı için ekstra
+                     bir adım gerekmiyor. -->
+                <form method="post" asp-action="JoinRoom" asp-controller="Chat" id="publicRoomForm" style="display:none;">
+                    <input type="hidden" name="roomCode" value="GENEL" />
+                    <input type="hidden" name="username" id="publicRoomUsername" />
+                </form>
+            </div>
+        </div>
+
+        <footer class="legal">
+            <p class="legal__text">
+                Bir odaya girdiğinde sesin ve paylaştığın ekran odadaki herkese iletilir.
+                <a href="https://ardekostudios.com/" target="_blank" rel="noopener noreferrer" onclick="window.open(this.href, '_blank'); return false;">Ardeko Studios</a> yapımı.
+            </p>
+        </footer>
+    </section>
+
+    <script src="~/js/cursor.js" asp-append-version="true"></script>
+    <script src="~/js/titlebar.js" asp-append-version="true"></script>
+    <script>
+        (function () {
+            "use strict";
+
+            var forms = {
+                join: document.getElementById("joinForm"),
+                create: document.getElementById("createForm")
+            };
+            var tabs = Array.prototype.slice.call(document.querySelectorAll(".mode-tab"));
+
+            // ---------- Alan doğrulama ----------
+            // Tarayıcının kendi "Lütfen bu alanı doldurun" balonu sayfanın
+            // geri kalanıyla hiç uyuşmuyor; ayrıca Photino/WebView2'de bu
+            // yerleşik pencereler her zaman güvenilir çalışmıyor. Yerine
+            // alanın altında beliren satır içi bir uyarı koyduk.
+
+            var FIELD_MESSAGES = {
+                username: "Bir nick yaz",
+                roomCode: "Oda kodunu gir"
+            };
+
+            function clearFieldError(group) {
+                if (!group) return;
+                group.classList.remove("is-invalid");
+                var note = group.querySelector(".field-note");
+                if (note) note.remove();
+            }
+
+            function showFieldError(input, message) {
+                var group = input.closest(".field-group");
+                if (!group) return;
+                clearFieldError(group);
+                // Aynı alana üst üste basılırsa uyarı animasyonunun yeniden
+                // oynaması için tarayıcıyı bir reflow'a zorluyoruz.
+                void group.offsetWidth;
+                group.classList.add("is-invalid");
+                var note = document.createElement("p");
+                note.className = "field-note";
+                note.textContent = message;
+                group.appendChild(note);
+            }
+
+            function validateForm(form) {
+                var firstInvalid = null;
+                form.querySelectorAll("input[required]").forEach(function (input) {
+                    if (input.value.trim()) {
+                        clearFieldError(input.closest(".field-group"));
+                        return;
+                    }
+                    showFieldError(input, FIELD_MESSAGES[input.name] || "Bu alan gerekli");
+                    if (!firstInvalid) firstInvalid = input;
                 });
+                if (firstInvalid) firstInvalid.focus();
+                return !firstInvalid;
+            }
 
-                Object.keys(forms).forEach(function (mode) {
-                    forms[mode].addEventListener("submit", function (e) {
-                        if (!validateForm(forms[mode])) e.preventDefault();
-                    });
+            // Kullanıcı yazmaya başlar başlamaz uyarı kalksın — hata düzeltildiği
+            // anda yok olmalı, gönderime kadar beklememeli.
+            document.querySelectorAll(".mode-form input").forEach(function (input) {
+                input.addEventListener("input", function () {
+                    if (input.value.trim()) clearFieldError(input.closest(".field-group"));
                 });
+            });
 
-                tabs.forEach(function (tab) {
-                    tab.addEventListener("click", function () {
-                        tabs.forEach(function (t) { t.classList.remove("active"); });
-                        tab.classList.add("active");
-                        Object.keys(forms).forEach(function (mode) {
-                            forms[mode].classList.toggle("active", mode === tab.dataset.mode);
-                            // Sekme değişince görünmeyen formdaki uyarılar temizlensin.
-                            forms[mode].querySelectorAll(".field-group").forEach(clearFieldError);
-                        });
-                        const firstInput = forms[tab.dataset.mode].querySelector("input");
-                        if (firstInput) firstInput.focus();
-                    });
+            Object.keys(forms).forEach(function (mode) {
+                forms[mode].addEventListener("submit", function (e) {
+                    if (!validateForm(forms[mode])) e.preventDefault();
                 });
+            });
 
-                const activeForm = document.querySelector(".mode-form.active input");
-                if (activeForm) activeForm.focus();
+            // ---------- Sekme geçişi ----------
+            // Sekme şeridinin yanı sıra üstteki "ODA KUR" düğmesi de aynı
+            // yere bağlanıyor (data-mode-jump), böylece nav'daki çağrı
+            // kullanıcıyı doğru forma indiriyor.
+            function setMode(mode) {
+                if (!forms[mode]) return;
+                tabs.forEach(function (t) {
+                    t.classList.toggle("active", t.dataset.mode === mode);
+                });
+                Object.keys(forms).forEach(function (m) {
+                    forms[m].classList.toggle("active", m === mode);
+                    // Sekme değişince görünmeyen formdaki uyarılar temizlensin.
+                    forms[m].querySelectorAll(".field-group").forEach(clearFieldError);
+                });
+                var firstInput = forms[mode].querySelector("input");
+                if (firstInput) firstInput.focus();
+            }
 
-                document.getElementById("publicRoomBtn").addEventListener("click", function () {
-                    const activeUsernameInput = document.querySelector(".mode-form.active input[name='username']");
-                    const name = activeUsernameInput ? activeUsernameInput.value.trim() : "";
+            tabs.forEach(function (tab) {
+                tab.addEventListener("click", function () { setMode(tab.dataset.mode); });
+            });
+
+            document.querySelectorAll("[data-mode-jump]").forEach(function (el) {
+                el.addEventListener("click", function () { setMode(el.dataset.modeJump); });
+            });
+
+            var activeInput = document.querySelector(".mode-form.active input");
+            if (activeInput) activeInput.focus();
+
+            // ---------- Açık Frekans ----------
+            // Hem nav'daki link hem panelin altındaki geniş düğme aynı işi yapıyor.
+            document.querySelectorAll(".js-public-room").forEach(function (trigger) {
+                trigger.addEventListener("click", function () {
+                    var activeUsernameInput = document.querySelector(".mode-form.active input[name='username']");
+                    var name = activeUsernameInput ? activeUsernameInput.value.trim() : "";
                     if (!name) {
                         // Eskiden burada prompt() açılıyordu. Artık kullanıcıyı
                         // zaten ekranda duran nick alanına yönlendiriyoruz.
-                        if (activeUsernameInput) showFieldError(activeUsernameInput, FIELD_MESSAGES.username);
-                        if (activeUsernameInput) activeUsernameInput.focus();
+                        if (activeUsernameInput) {
+                            showFieldError(activeUsernameInput, FIELD_MESSAGES.username);
+                            activeUsernameInput.focus();
+                        }
                         return;
                     }
                     document.getElementById("publicRoomUsername").value = name;
                     document.getElementById("publicRoomForm").submit();
                 });
+            });
 
-                // ---------- Profil resmi (opsiyonel) ----------
-                // Seçilen fotoğraf sunucuya bu sayfadan gönderilmiyor: 128x128'e
-                // küçültülüp sessionStorage'a yazılıyor, Index sayfası açılınca
-                // oradan okunup doğrudan SignalR'daki JoinRoom çağrısına eklenecek.
-                const AVATAR_PALETTE = ["#8FA6C9", "#C98F9E", "#9EC98F", "#C9AE8F", "#A98FC9", "#8FC9BE", "#C98FB0", "#B0C98F"];
-                function avatarColor(name) {
-                    let hash = 0;
-                    for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-                    return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
-                }
+            // ---------- Profil resmi (opsiyonel) ----------
+            // Seçilen fotoğraf sunucuya bu sayfadan gönderilmiyor: 128x128'e
+            // küçültülüp sessionStorage'a yazılıyor, Index sayfası açılınca
+            // oradan okunup doğrudan SignalR'daki JoinRoom çağrısına ekleniyor.
+            var AVATAR_PALETTE = ["#8FA6C9", "#C98F9E", "#9EC98F", "#C9AE8F", "#A98FC9", "#8FC9BE", "#C98FB0", "#B0C98F"];
 
-                const avatarPreviewBtn = document.getElementById("avatarPreviewBtn");
-                const avatarPreviewImg = document.getElementById("avatarPreviewImg");
-                const avatarPreviewInitial = document.getElementById("avatarPreviewInitial");
-                const avatarFileInput = document.getElementById("avatarFileInput");
-                const avatarClearBtn = document.getElementById("avatarClearBtn");
+            function avatarColor(name) {
+                var hash = 0;
+                for (var i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+                return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+            }
 
-                // Hatalı form gönderimi sonrası Login'e geri dönüldüyse önceki seçimi göster.
-                const existingAvatar = sessionStorage.getItem("revoAvatar");
-                if (existingAvatar) {
-                    avatarPreviewImg.src = existingAvatar;
-                    avatarPreviewImg.style.display = "block";
-                    avatarPreviewInitial.style.display = "none";
-                    avatarClearBtn.style.display = "inline";
-                }
+            var avatarPreviewBtn = document.getElementById("avatarPreviewBtn");
+            var avatarPreviewImg = document.getElementById("avatarPreviewImg");
+            var avatarPreviewInitial = document.getElementById("avatarPreviewInitial");
+            var avatarFileInput = document.getElementById("avatarFileInput");
+            var avatarClearBtn = document.getElementById("avatarClearBtn");
 
-                avatarPreviewBtn.addEventListener("click", () => avatarFileInput.click());
+            // Hatalı form gönderimi sonrası Login'e geri dönüldüyse önceki seçimi göster.
+            var existingAvatar = sessionStorage.getItem("revoAvatar");
+            if (existingAvatar) {
+                avatarPreviewImg.src = existingAvatar;
+                avatarPreviewImg.style.display = "block";
+                avatarPreviewInitial.style.display = "none";
+                avatarClearBtn.style.display = "inline";
+            }
 
-                avatarFileInput.addEventListener("change", () => {
-                    const file = avatarFileInput.files[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        const img = new Image();
-                        img.onload = () => {
-                            const SIZE = 128;
-                            const canvas = document.createElement("canvas");
-                            canvas.width = SIZE;
-                            canvas.height = SIZE;
-                            const ctx = canvas.getContext("2d");
-                            const side = Math.min(img.width, img.height);
-                            const sx = (img.width - side) / 2;
-                            const sy = (img.height - side) / 2;
-                            ctx.drawImage(img, sx, sy, side, side, 0, 0, SIZE, SIZE);
-                            const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
-                            sessionStorage.setItem("revoAvatar", dataUrl);
-                            avatarPreviewImg.src = dataUrl;
-                            avatarPreviewImg.style.display = "block";
-                            avatarPreviewInitial.style.display = "none";
-                            avatarClearBtn.style.display = "inline";
-                        };
-                        img.src = e.target.result;
+            avatarPreviewBtn.addEventListener("click", function () { avatarFileInput.click(); });
+
+            avatarFileInput.addEventListener("change", function () {
+                var file = avatarFileInput.files[0];
+                if (!file) return;
+                var reader = new FileReader();
+                reader.onload = function (e) {
+                    var img = new Image();
+                    img.onload = function () {
+                        var SIZE = 128;
+                        var canvas = document.createElement("canvas");
+                        canvas.width = SIZE;
+                        canvas.height = SIZE;
+                        var ctx = canvas.getContext("2d");
+                        var side = Math.min(img.width, img.height);
+                        var sx = (img.width - side) / 2;
+                        var sy = (img.height - side) / 2;
+                        ctx.drawImage(img, sx, sy, side, side, 0, 0, SIZE, SIZE);
+                        var dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+                        sessionStorage.setItem("revoAvatar", dataUrl);
+                        avatarPreviewImg.src = dataUrl;
+                        avatarPreviewImg.style.display = "block";
+                        avatarPreviewInitial.style.display = "none";
+                        avatarClearBtn.style.display = "inline";
                     };
-                    reader.readAsDataURL(file);
-                });
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
 
-                avatarClearBtn.addEventListener("click", () => {
-                    sessionStorage.removeItem("revoAvatar");
-                    avatarFileInput.value = "";
-                    avatarPreviewImg.style.display = "none";
-                    avatarPreviewInitial.style.display = "block";
-                    avatarClearBtn.style.display = "none";
-                });
+            avatarClearBtn.addEventListener("click", function () {
+                sessionStorage.removeItem("revoAvatar");
+                avatarFileInput.value = "";
+                avatarPreviewImg.style.display = "none";
+                avatarPreviewInitial.style.display = "block";
+                avatarClearBtn.style.display = "none";
+                avatarPreviewBtn.style.background = "";
+                avatarPreviewBtn.style.color = "";
+            });
 
-                // Foto seçilmemişse, yazılan nick'e göre canlı harf + renk önizlemesi.
-                document.querySelectorAll(".mode-form input[name='username']").forEach((input) => {
-                    input.addEventListener("input", () => {
-                        if (sessionStorage.getItem("revoAvatar")) return;
-                        const name = input.value.trim();
-                        avatarPreviewInitial.textContent = name ? name.charAt(0).toLocaleUpperCase("tr-TR") : "?";
-                        avatarPreviewBtn.style.background = name ? avatarColor(name) : "";
-                        avatarPreviewBtn.style.color = name ? "#10141A" : "";
-                    });
+            // Foto seçilmemişse, yazılan nick'e göre canlı harf + renk önizlemesi.
+            document.querySelectorAll(".mode-form input[name='username']").forEach(function (input) {
+                input.addEventListener("input", function () {
+                    if (sessionStorage.getItem("revoAvatar")) return;
+                    var name = input.value.trim();
+                    avatarPreviewInitial.textContent = name ? name.charAt(0).toLocaleUpperCase("tr-TR") : "?";
+                    avatarPreviewBtn.style.background = name ? avatarColor(name) : "";
+                    avatarPreviewBtn.style.color = name ? "#10141A" : "";
                 });
-            })();
-        </script>
-
-       <a class="nameplate" href="https://ardekostudios.com/" target="_blank" rel="noopener noreferrer" onclick="window.open(this.href, '_blank'); return false;" tabindex="-1" aria-hidden="true">
-    <img src="/img/ardeko.png" alt="" />
-    <span class="plate-text">Crafted by <b>Ardeko Studios</b></span>
-</a>
-    </div>
+            });
+        })();
+    </script>
 </body>
 </html>
