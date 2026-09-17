@@ -1,8 +1,32 @@
 @{
     Layout = null;
-    // Açılışta seçili gelen sekme. Davet linkiyle (/oda/{kod}) gelindiğinde
-    // zaten "katıl" tarafı doğru olan, o yüzden varsayılan bu.
-    var joinIsDefault = true;
+    var prefilledCode = ViewBag.PrefilledRoomCode as string;
+    var lobbyMode = (ViewBag.LobbyMode as string) ?? (string.IsNullOrWhiteSpace(prefilledCode) ? "public" : "join");
+    var isJoin = lobbyMode == "join";
+    var isCreate = lobbyMode == "create";
+    var publicCount = ViewBag.PublicCount is int n ? n : 0;
+    var publicNames = (ViewBag.PublicNames as IEnumerable<string>)?.ToList() ?? new List<string>();
+    var hasInvite = !string.IsNullOrWhiteSpace(prefilledCode) && prefilledCode.ToUpperInvariant() != "GENEL";
+    string peopleLine = "";
+    string factLine;
+    if (publicCount == 0)
+    {
+        factLine = "Şu an kimse yok · ilk sen gir";
+    }
+    else
+    {
+        if (publicNames.Count > 0)
+        {
+            peopleLine = string.Join(", ", publicNames);
+            if (publicCount > publicNames.Count)
+                peopleLine += " ve " + (publicCount - publicNames.Count) + " kişi daha";
+        }
+        else
+        {
+            peopleLine = publicCount + " kişi";
+        }
+        factLine = "Şifresiz oda";
+    }
 }
 <!DOCTYPE html>
 <html lang="tr">
@@ -50,6 +74,8 @@
 
         * { box-sizing: border-box; }
 
+        [hidden] { display: none !important; }
+
         html, body {
             margin: 0;
             padding: 0;
@@ -82,12 +108,15 @@
             background: #000;
         }
 
-        .hero__video {
+        .hero__hole {
+            position: absolute;
+            inset: 0;
             width: 100%;
             height: 100%;
-            object-fit: cover;
-            object-position: center;
             display: block;
+            z-index: 0;
+            pointer-events: none;
+            image-rendering: auto;
         }
 
         /* Çift katmanlı karartma: yataydaki katman sağa doğru koyulaşıp
@@ -95,6 +124,8 @@
         .hero__scrim {
             position: absolute;
             inset: 0;
+            z-index: 1;
+            pointer-events: none;
             background:
                 linear-gradient(to right, transparent 0%, transparent 45%, rgba(0,0,0,0.45) 72%, rgba(0,0,0,0.72) 100%),
                 linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 22%, transparent 78%, rgba(0,0,0,0.65) 100%);
@@ -221,13 +252,26 @@
             margin: clamp(10px, 1vw, 18px) 0 0;
         }
 
-        /* ---------------- Profil resmi ---------------- */
+        /* ---------------- Kimlik: avatar + nick ---------------- */
+
+        .identity {
+            display: flex;
+            align-items: flex-end;
+            gap: 14px;
+            width: 100%;
+        }
+
+        .identity .field-group {
+            flex: 1;
+            min-width: 0;
+        }
 
         .avatar {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 14px;
-            margin-top: clamp(18px, 2vw, 32px);
+            gap: 6px;
+            flex: none;
         }
 
         .avatar__btn {
@@ -259,25 +303,12 @@
             object-fit: cover;
         }
 
-        .avatar__meta {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 5px;
-        }
-
-        .avatar__label,
         .avatar__clear {
             font-family: var(--font-mono);
             font-weight: 400;
-            font-size: clamp(10px, 0.66vw, 12px);
+            font-size: 9px;
             letter-spacing: 0.16em;
             text-transform: uppercase;
-        }
-
-        .avatar__label { color: var(--text-dimmer); }
-
-        .avatar__clear {
             color: var(--text-dim);
             background: none;
             border: 0;
@@ -290,12 +321,74 @@
 
         .avatar__clear:hover { color: var(--text); }
 
+        /* ---------------- Ana giriş ---------------- */
+
+        .entry {
+            width: 100%;
+            margin-top: clamp(22px, 2.4vw, 40px);
+            display: flex;
+            flex-direction: column;
+            gap: clamp(16px, 1.6vw, 22px);
+        }
+
+        .entry__meta {
+            margin: -4px 0 0;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 6px;
+        }
+
+        .entry__people,
+        .entry__fact {
+            margin: 0;
+            font-family: var(--font-mono);
+            font-weight: 400;
+            line-height: 1.45;
+        }
+
+        .entry__people {
+            font-size: clamp(12px, 0.8vw, 14px);
+            letter-spacing: 0.02em;
+            color: var(--text-dim);
+        }
+
+        .entry__kicker {
+            display: inline-block;
+            margin-right: 8px;
+            font-size: 10px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--text-dimmer);
+        }
+
+        .entry__fact {
+            font-size: clamp(10px, 0.7vw, 12px);
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--text-dimmer);
+        }
+
+        .modes-block {
+            width: 100%;
+            margin-top: clamp(22px, 2.4vw, 40px);
+        }
+
+        .modes-kicker {
+            display: block;
+            margin: 0 0 10px;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--text-dimmer);
+        }
+
         /* ---------------- Sekmeler ---------------- */
 
         .modes {
             display: flex;
             width: 100%;
-            margin-top: clamp(18px, 2vw, 32px);
             border: 1px solid var(--line);
         }
 
@@ -351,10 +444,20 @@
             width: 100%;
             flex-direction: column;
             gap: clamp(12px, 1.2vw, 18px);
-            margin-top: clamp(22px, 2.4vw, 40px);
+            margin-top: clamp(16px, 1.6vw, 24px);
         }
 
         .mode-form.active { display: flex; }
+
+        .field-hint {
+            margin: 0;
+            font-family: var(--font-mono);
+            font-weight: 400;
+            font-size: 10px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--text-dimmer);
+        }
 
         .field-group { position: relative; }
 
@@ -450,6 +553,13 @@
         }
 
         .btn--solid:hover { background: rgba(255, 255, 255, 0.17); }
+
+        .btn--primary {
+            background: #fff;
+            color: #000;
+        }
+
+        .btn--primary:hover { background: rgba(255, 255, 255, 0.86); }
 
         .btn--ghost {
             background: var(--fill-ghost);
@@ -565,11 +675,11 @@
         @@media (max-height: 720px) {
             .panel__title { font-size: clamp(34px, 3.6vw, 52px); }
             .panel__tagline { margin-top: 8px; }
-            .avatar { margin-top: 14px; }
             .avatar__btn { width: 44px; height: 44px; font-size: 17px; }
-            .modes { margin-top: 14px; }
+            .entry { margin-top: 16px; gap: 12px; }
+            .modes-block { margin-top: 16px; }
             .mode-tab { padding: 10px; }
-            .mode-form { margin-top: 16px; gap: 10px; }
+            .mode-form { margin-top: 12px; gap: 10px; }
             .btn { padding: 12px 20px; }
             .btn--ghost { margin-top: 8px; }
             .panel__alt { margin-top: 14px; }
@@ -579,14 +689,6 @@
         }
 
         @@media (prefers-reduced-motion: reduce) {
-            .hero__video { display: none; }
-
-            .hero__media {
-                background-image: url('/media/echoid-poster.png');
-                background-size: cover;
-                background-position: center;
-            }
-
             *, *::before, *::after {
                 animation-duration: 0.01ms !important;
                 animation-iteration-count: 1 !important;
@@ -618,10 +720,7 @@
     </div>
 
     <section class="hero">
-        <div class="hero__media" aria-hidden="true">
-            <video class="hero__video" autoplay muted loop playsinline preload="auto" poster="/media/echoid-poster.png">
-                <source src="/media/echoid-hero.mp4" type="video/mp4" />
-            </video>
+        <div class="hero__media" id="loginBlackhole" aria-hidden="true">
             <div class="hero__scrim"></div>
         </div>
 
@@ -630,7 +729,6 @@
             <div class="nav__cluster">
                 <div class="nav__links">
                     <a asp-action="Rooms" asp-controller="Chat">Aktif odalar</a>
-                    <button type="button" class="js-public-room">Açık frekans</button>
                 </div>
                 <button type="button" class="nav__cta" data-mode-jump="create">Oda kur</button>
             </div>
@@ -638,27 +736,47 @@
 
         <div class="hero__body">
             <div class="panel">
-                <span class="chip">[ Frekans girişi ]</span>
+                <span class="chip">@(hasInvite ? "[ Davet ]" : "[ Lobi ]")</span>
 
                 <h1 class="panel__title">REVO</h1>
 
-                <p class="panel__tagline">Arkadaşlarınla aynı frekansta buluş.</p>
+                <p class="panel__tagline">@(hasInvite ? "Nickini yaz, davet koduna gir." : "Nickini yaz, açık frekansa gir.")</p>
 
-                <div class="avatar">
-                    <button type="button" class="avatar__btn" id="avatarPreviewBtn" aria-label="Profil resmi seç">
-                        <span id="avatarPreviewInitial">?</span>
-                        <img id="avatarPreviewImg" alt="" style="display:none;" />
-                    </button>
-                    <input type="file" id="avatarFileInput" accept="image/*" hidden />
-                    <div class="avatar__meta">
-                        <span class="avatar__label">Profil resmi (opsiyonel)</span>
-                        <button type="button" class="avatar__clear" id="avatarClearBtn" style="display:none;">Kaldır</button>
+                <div class="entry">
+                    <div class="identity">
+                        <div class="avatar">
+                            <button type="button" class="avatar__btn" id="avatarPreviewBtn" aria-label="Profil resmi seç">
+                                <span id="avatarPreviewInitial">?</span>
+                                <img id="avatarPreviewImg" alt="" hidden />
+                            </button>
+                            <input type="file" id="avatarFileInput" accept="image/*" hidden />
+                            <button type="button" class="avatar__clear" id="avatarClearBtn" hidden>Kaldır</button>
+                        </div>
+                        <div class="field-group" id="usernameGroup">
+                            <input type="text" id="usernameInput" placeholder="Nickini yaz…" maxlength="24" autocomplete="nickname" />
+                        </div>
+                    </div>
+
+                    <form method="post" asp-action="JoinRoom" asp-controller="Chat" id="publicRoomForm" novalidate>
+                        <input type="hidden" name="roomCode" value="GENEL" />
+                        <input type="hidden" name="username" id="publicRoomUsername" class="js-username-mirror" />
+                        <button type="submit" class="btn @(hasInvite ? "btn--ghost" : "btn--primary")" id="publicGo">Açık Frekansa gir</button>
+                    </form>
+                    <div class="entry__meta">
+                        @if (!string.IsNullOrEmpty(peopleLine))
+                        {
+                            <p class="entry__people"><span class="entry__kicker">İçeride</span>@peopleLine</p>
+                        }
+                        <p class="entry__fact">@factLine</p>
                     </div>
                 </div>
 
-                <div class="modes" role="tablist">
-                    <button type="button" class="mode-tab @(joinIsDefault ? "active" : "")" data-mode="join">Odaya katıl</button>
-                    <button type="button" class="mode-tab @(joinIsDefault ? "" : "active")" data-mode="create">Oda kur</button>
+                <div class="modes-block">
+                    <span class="modes-kicker">Başka bir oda</span>
+                    <div class="modes" role="tablist">
+                        <button type="button" class="mode-tab @(isJoin ? "active" : "")" data-mode="join" role="tab" aria-selected="@(isJoin ? "true" : "false")">Odaya katıl</button>
+                        <button type="button" class="mode-tab @(isCreate ? "active" : "")" data-mode="create" role="tab" aria-selected="@(isCreate ? "true" : "false")">Oda kur</button>
+                    </div>
                 </div>
 
                 @if (!ViewData.ModelState.IsValid)
@@ -671,12 +789,10 @@
                     </div>
                 }
 
-                <form method="post" asp-action="JoinRoom" asp-controller="Chat" id="joinForm" class="mode-form @(joinIsDefault ? "active" : "")" novalidate>
+                <form method="post" asp-action="JoinRoom" asp-controller="Chat" id="joinForm" class="mode-form @(isJoin ? "active" : "")" novalidate>
+                    <input type="hidden" name="username" class="js-username-mirror" />
                     <div class="field-group">
-                        <input type="text" name="username" placeholder="Nickini yaz…" required maxlength="24" autocomplete="off" />
-                    </div>
-                    <div class="field-group">
-                        <input type="text" name="roomCode" class="code-input" placeholder="Oda kodu" required maxlength="8" autocomplete="off" value="@ViewBag.PrefilledRoomCode" />
+                        <input type="text" name="roomCode" class="code-input" placeholder="Oda kodu" required maxlength="8" autocomplete="off" value="@prefilledCode" />
                     </div>
                     <div class="field-group">
                         <input type="password" name="password" placeholder="Şifre (varsa)" autocomplete="off" />
@@ -684,27 +800,13 @@
                     <button type="submit" class="btn btn--solid">Odaya gir</button>
                 </form>
 
-                <form method="post" asp-action="CreateRoom" asp-controller="Chat" id="createForm" class="mode-form @(joinIsDefault ? "" : "active")" novalidate>
-                    <div class="field-group">
-                        <input type="text" name="username" placeholder="Nickini yaz…" required maxlength="24" autocomplete="off" />
-                    </div>
+                <form method="post" asp-action="CreateRoom" asp-controller="Chat" id="createForm" class="mode-form @(isCreate ? "active" : "")" novalidate>
+                    <input type="hidden" name="username" class="js-username-mirror" />
+                    <p class="field-hint">Kod senin için üretilir</p>
                     <div class="field-group">
                         <input type="password" name="password" placeholder="Şifre koy (opsiyonel)" autocomplete="off" />
                     </div>
                     <button type="submit" class="btn btn--solid">Oda kur</button>
-                </form>
-
-                <button type="button" class="btn btn--ghost js-public-room">Açık frekansa katıl</button>
-
-                <a class="panel__alt" asp-action="Rooms" asp-controller="Chat">Aktif odaları gör</a>
-
-                <!-- Açık Frekans'a tek tıkla katılmak için: kullanıcı adını aktif
-                     formdan alıp oda kodunu GENEL olarak sabitleyip bu formu
-                     gönderiyor. Açık Frekans hiç şifreli olmadığı için ekstra
-                     bir adım gerekmiyor. -->
-                <form method="post" asp-action="JoinRoom" asp-controller="Chat" id="publicRoomForm" style="display:none;">
-                    <input type="hidden" name="roomCode" value="GENEL" />
-                    <input type="hidden" name="username" id="publicRoomUsername" />
                 </form>
             </div>
         </div>
@@ -719,21 +821,45 @@
 
     <script src="~/js/cursor.js" asp-append-version="true"></script>
     <script src="~/js/titlebar.js" asp-append-version="true"></script>
+    <script src="~/js/blackhole-hero.js" asp-append-version="true"></script>
+    <script src="~/js/blackhole-scene.js" asp-append-version="true"></script>
+    <script>
+        if (window.RevoBlackhole) {
+            window.RevoBlackhole.mount(document.getElementById("loginBlackhole"), {
+                focus: [0.34, 0.46],
+                scrim: "right",
+                scrimStrength: 0.78,
+                starBrightness: 0,
+                glow: 0,
+                skipBloom: true,
+                steps: 52,
+                resolution: 0.28,
+                maxDpr: 1,
+                hotColor: "#F5F9FC",
+                midColor: "#8FB9D6",
+                coolColor: "#2C4254",
+                doppler: 0.16,
+                brightness: 1.14,
+                exposure: 1.0
+            });
+        }
+    </script>
     <script>
         (function () {
             "use strict";
 
+            var USERNAME_KEY = "revo_username";
             var forms = {
                 join: document.getElementById("joinForm"),
                 create: document.getElementById("createForm")
             };
+            var publicForm = document.getElementById("publicRoomForm");
+            var usernameInput = document.getElementById("usernameInput");
+            var usernameGroup = document.getElementById("usernameGroup");
             var tabs = Array.prototype.slice.call(document.querySelectorAll(".mode-tab"));
-
-            // ---------- Alan doğrulama ----------
-            // Tarayıcının kendi "Lütfen bu alanı doldurun" balonu sayfanın
-            // geri kalanıyla hiç uyuşmuyor; ayrıca Photino/WebView2'de bu
-            // yerleşik pencereler her zaman güvenilir çalışmıyor. Yerine
-            // alanın altında beliren satır içi bir uyarı koyduk.
+            var currentMode = document.querySelector(".mode-tab.active")
+                ? document.querySelector(".mode-tab.active").dataset.mode
+                : "public";
 
             var FIELD_MESSAGES = {
                 username: "Bir nick yaz",
@@ -748,11 +874,9 @@
             }
 
             function showFieldError(input, message) {
-                var group = input.closest(".field-group");
+                var group = input.closest(".field-group") || usernameGroup;
                 if (!group) return;
                 clearFieldError(group);
-                // Aynı alana üst üste basılırsa uyarı animasyonunun yeniden
-                // oynaması için tarayıcıyı bir reflow'a zorluyoruz.
                 void group.offsetWidth;
                 group.classList.add("is-invalid");
                 var note = document.createElement("p");
@@ -761,7 +885,34 @@
                 group.appendChild(note);
             }
 
+            function usernameValue() {
+                return (usernameInput.value || "").trim();
+            }
+
+            function mirrorUsername() {
+                var name = usernameValue();
+                document.querySelectorAll(".js-username-mirror").forEach(function (el) {
+                    el.value = name;
+                });
+                try {
+                    if (name) localStorage.setItem(USERNAME_KEY, name);
+                } catch (err) { /* gizli tarama */ }
+            }
+
+            function requireUsername() {
+                var name = usernameValue();
+                if (name) {
+                    clearFieldError(usernameGroup);
+                    mirrorUsername();
+                    return true;
+                }
+                showFieldError(usernameInput, FIELD_MESSAGES.username);
+                usernameInput.focus();
+                return false;
+            }
+
             function validateForm(form) {
+                if (!requireUsername()) return false;
                 var firstInvalid = null;
                 form.querySelectorAll("input[required]").forEach(function (input) {
                     if (input.value.trim()) {
@@ -775,12 +926,19 @@
                 return !firstInvalid;
             }
 
-            // Kullanıcı yazmaya başlar başlamaz uyarı kalksın — hata düzeltildiği
-            // anda yok olmalı, gönderime kadar beklememeli.
+            usernameInput.addEventListener("input", function () {
+                if (usernameValue()) clearFieldError(usernameGroup);
+                updateAvatarFromName();
+            });
+
             document.querySelectorAll(".mode-form input").forEach(function (input) {
                 input.addEventListener("input", function () {
                     if (input.value.trim()) clearFieldError(input.closest(".field-group"));
                 });
+            });
+
+            publicForm.addEventListener("submit", function (e) {
+                if (!requireUsername()) e.preventDefault();
             });
 
             Object.keys(forms).forEach(function (mode) {
@@ -789,22 +947,46 @@
                 });
             });
 
-            // ---------- Sekme geçişi ----------
-            // Sekme şeridinin yanı sıra üstteki "ODA KUR" düğmesi de aynı
-            // yere bağlanıyor (data-mode-jump), böylece nav'daki çağrı
-            // kullanıcıyı doğru forma indiriyor.
-            function setMode(mode) {
-                if (!forms[mode]) return;
+            usernameInput.addEventListener("keydown", function (e) {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                publicForm.requestSubmit();
+            });
+
+            function setMode(mode, options) {
+                var allowToggle = !options || options.toggle !== false;
+
+                if (mode !== "join" && mode !== "create") {
+                    currentMode = "public";
+                    tabs.forEach(function (t) {
+                        t.classList.remove("active");
+                        t.setAttribute("aria-selected", "false");
+                    });
+                    Object.keys(forms).forEach(function (m) {
+                        forms[m].classList.remove("active");
+                        forms[m].querySelectorAll(".field-group").forEach(clearFieldError);
+                    });
+                    usernameInput.focus();
+                    return;
+                }
+
+                if (allowToggle && currentMode === mode) {
+                    setMode("public");
+                    return;
+                }
+
+                currentMode = mode;
                 tabs.forEach(function (t) {
-                    t.classList.toggle("active", t.dataset.mode === mode);
+                    var on = t.dataset.mode === mode;
+                    t.classList.toggle("active", on);
+                    t.setAttribute("aria-selected", on ? "true" : "false");
                 });
                 Object.keys(forms).forEach(function (m) {
                     forms[m].classList.toggle("active", m === mode);
-                    // Sekme değişince görünmeyen formdaki uyarılar temizlensin.
                     forms[m].querySelectorAll(".field-group").forEach(clearFieldError);
                 });
-                var firstInput = forms[mode].querySelector("input");
-                if (firstInput) firstInput.focus();
+                var firstVisible = forms[mode].querySelector("input:not([type='hidden'])");
+                if (firstVisible) firstVisible.focus();
             }
 
             tabs.forEach(function (tab) {
@@ -812,42 +994,29 @@
             });
 
             document.querySelectorAll("[data-mode-jump]").forEach(function (el) {
-                el.addEventListener("click", function () { setMode(el.dataset.modeJump); });
-            });
-
-            var activeInput = document.querySelector(".mode-form.active input");
-            if (activeInput) activeInput.focus();
-
-            // ---------- Açık Frekans ----------
-            // Hem nav'daki link hem panelin altındaki geniş düğme aynı işi yapıyor.
-            document.querySelectorAll(".js-public-room").forEach(function (trigger) {
-                trigger.addEventListener("click", function () {
-                    var activeUsernameInput = document.querySelector(".mode-form.active input[name='username']");
-                    var name = activeUsernameInput ? activeUsernameInput.value.trim() : "";
-                    if (!name) {
-                        // Eskiden burada prompt() açılıyordu. Artık kullanıcıyı
-                        // zaten ekranda duran nick alanına yönlendiriyoruz.
-                        if (activeUsernameInput) {
-                            showFieldError(activeUsernameInput, FIELD_MESSAGES.username);
-                            activeUsernameInput.focus();
-                        }
-                        return;
-                    }
-                    document.getElementById("publicRoomUsername").value = name;
-                    document.getElementById("publicRoomForm").submit();
+                el.addEventListener("click", function () {
+                    setMode(el.dataset.modeJump, { toggle: false });
                 });
             });
 
-            // ---------- Profil resmi (opsiyonel) ----------
-            // Seçilen fotoğraf sunucuya bu sayfadan gönderilmiyor: 128x128'e
-            // küçültülüp sessionStorage'a yazılıyor, Index sayfası açılınca
-            // oradan okunup doğrudan SignalR'daki JoinRoom çağrısına ekleniyor.
-            var AVATAR_PALETTE = ["#8FA6C9", "#C98F9E", "#9EC98F", "#C9AE8F", "#A98FC9", "#8FC9BE", "#C98FB0", "#B0C98F"];
+            try {
+                var saved = localStorage.getItem(USERNAME_KEY);
+                if (saved && !usernameInput.value) usernameInput.value = saved;
+            } catch (err) { /* */ }
 
-            function avatarColor(name) {
-                var hash = 0;
-                for (var i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-                return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+            if (currentMode === "join") {
+                var codeInput = forms.join.querySelector("input[name='roomCode']");
+                if (codeInput && codeInput.value) {
+                    var pw = forms.join.querySelector("input[name='password']");
+                    if (pw) pw.focus();
+                    else codeInput.focus();
+                } else usernameInput.focus();
+            } else if (currentMode === "create") {
+                var createPw = forms.create.querySelector("input[name='password']");
+                if (createPw) createPw.focus();
+                else usernameInput.focus();
+            } else {
+                usernameInput.focus();
             }
 
             var avatarPreviewBtn = document.getElementById("avatarPreviewBtn");
@@ -856,13 +1025,22 @@
             var avatarFileInput = document.getElementById("avatarFileInput");
             var avatarClearBtn = document.getElementById("avatarClearBtn");
 
-            // Hatalı form gönderimi sonrası Login'e geri dönüldüyse önceki seçimi göster.
+            function updateAvatarFromName() {
+                if (sessionStorage.getItem("revoAvatar")) return;
+                var name = usernameValue();
+                avatarPreviewInitial.textContent = name ? name.charAt(0).toLocaleUpperCase("tr-TR") : "?";
+                avatarPreviewBtn.style.background = name ? "rgba(255,255,255,0.10)" : "";
+                avatarPreviewBtn.style.color = "";
+            }
+
             var existingAvatar = sessionStorage.getItem("revoAvatar");
             if (existingAvatar) {
                 avatarPreviewImg.src = existingAvatar;
-                avatarPreviewImg.style.display = "block";
-                avatarPreviewInitial.style.display = "none";
-                avatarClearBtn.style.display = "inline";
+                avatarPreviewImg.hidden = false;
+                avatarPreviewInitial.hidden = true;
+                avatarClearBtn.hidden = false;
+            } else {
+                updateAvatarFromName();
             }
 
             avatarPreviewBtn.addEventListener("click", function () { avatarFileInput.click(); });
@@ -886,9 +1064,9 @@
                         var dataUrl = canvas.toDataURL("image/jpeg", 0.72);
                         sessionStorage.setItem("revoAvatar", dataUrl);
                         avatarPreviewImg.src = dataUrl;
-                        avatarPreviewImg.style.display = "block";
-                        avatarPreviewInitial.style.display = "none";
-                        avatarClearBtn.style.display = "inline";
+                        avatarPreviewImg.hidden = false;
+                        avatarPreviewInitial.hidden = true;
+                        avatarClearBtn.hidden = false;
                     };
                     img.src = e.target.result;
                 };
@@ -898,22 +1076,12 @@
             avatarClearBtn.addEventListener("click", function () {
                 sessionStorage.removeItem("revoAvatar");
                 avatarFileInput.value = "";
-                avatarPreviewImg.style.display = "none";
-                avatarPreviewInitial.style.display = "block";
-                avatarClearBtn.style.display = "none";
+                avatarPreviewImg.hidden = true;
+                avatarPreviewInitial.hidden = false;
+                avatarClearBtn.hidden = true;
                 avatarPreviewBtn.style.background = "";
                 avatarPreviewBtn.style.color = "";
-            });
-
-            // Foto seçilmemişse, yazılan nick'e göre canlı harf + renk önizlemesi.
-            document.querySelectorAll(".mode-form input[name='username']").forEach(function (input) {
-                input.addEventListener("input", function () {
-                    if (sessionStorage.getItem("revoAvatar")) return;
-                    var name = input.value.trim();
-                    avatarPreviewInitial.textContent = name ? name.charAt(0).toLocaleUpperCase("tr-TR") : "?";
-                    avatarPreviewBtn.style.background = name ? avatarColor(name) : "";
-                    avatarPreviewBtn.style.color = name ? "#10141A" : "";
-                });
+                updateAvatarFromName();
             });
         })();
     </script>

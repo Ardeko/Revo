@@ -24,10 +24,19 @@
 ; ============================================================================
 
 #define MyAppName "REVO"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "Ardeko Studios"
 #define MyAppURL "https://ardekostudios.com"
 #define MyAppExeName "RevoApp.exe"
+
+; ---------------------------------------------------------------------------
+; GÜNCELLEME MANTIĞI
+; AppId, uygulamanın kalıcı kimliği. Inno kurulu sürümü bu kimlikle bulur,
+; dolayısıyla ASLA DEĞİŞMEMELİ — değişirse yeni setup, eskisini güncellemek
+; yerine ikinci bir kurulum olarak yan yana yüklenir.
+; Her yeni setup için tek yapılması gereken MyAppVersion'ı yükseltmek.
+; ---------------------------------------------------------------------------
+#define MyAppId "{8F3C1A64-7B2E-4C55-9E11-A17C90D4B002}"
 
 ; publish çıktısının bulunduğu klasör — kendi yoluna göre düzelt
 #define SourceDir "bin\Release\net10.0\win-x64\publish"
@@ -51,10 +60,11 @@
 #endif
 
 [Setup]
-AppId={{8F3C1A64-7B2E-4C55-9E11-A17C90D4B002}
+AppId={{#MyAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
@@ -73,17 +83,54 @@ ShowLanguageDialog=no
 
 ; Yönetici hakkı istemiyoruz: kullanıcı klasörüne kurulum yapılınca UAC
 ; penceresi çıkmıyor ve kurulum tek tıkla akıyor.
+;
+; Eskiden burada PrivilegesRequiredOverridesAllowed=dialog vardı; kurulum
+; "herkes için mi, sadece senin için mi?" diye soruyordu. "Herkes için"
+; seçildiğinde uygulama C:\Program Files\REVO'ya gidiyor ve o klasöre yazmak
+; yönetici hakkı istediği için SONRAKİ HER GÜNCELLEME UAC'ye takılıyordu.
+; Seçenek kaldırıldı: kurulum daima kullanıcı klasörüne ({autopf} burada
+; %LocalAppData%\Programs'a çözülür) yapılıyor, güncellemeler tek çift
+; tıkla akıyor. Chrome ve Discord'un masaüstü kurulumları da böyle çalışır.
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
 
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+
+; ---------------------------------------------------------------------------
+; Var olan kurulumun üzerine kurma
+;
+; Inno bunu AppId sayesinde zaten kendi yapıyor; aşağıdakiler o davranışı
+; açıkça yazıya döküyor ve tek gerçek tökezleme noktasını kapatıyor:
+; kurulum sırasında REVO açıksa RevoApp.exe kilitli olur ve kopyalama
+; "dosyaya erişilemiyor" diye patlardı.
+;
+;   CloseApplications=force  → hedef dosyaları kullanan uygulamayı Restart
+;                              Manager ile kapat; nazikçe kapanmazsa zorla.
+;   RestartApplications=no   → kurulum bitince kendiliğinden açma; kullanıcı
+;                              bitiş sayfasındaki "REVO'yu başlat" kutusuyla
+;                              karar versin (iki kopya açılmasın).
+;   UsePreviousAppDir=yes    → güncellemede eski klasöre kur (varsayılan).
+;   DisableDirPage=auto      → kurulu sürüm bulunursa klasör sayfasını atla.
+; ---------------------------------------------------------------------------
+CloseApplications=force
+RestartApplications=no
+UsePreviousAppDir=yes
+UsePreviousGroup=yes
+UsePreviousTasks=yes
+DisableDirPage=auto
 
 [Languages]
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Masaüstü kısayolu oluştur"; GroupDescription: "Kısayollar"; Flags: checkedonce
+
+[InstallDelete]
+; ignoreversion mevcut dosyaların üzerine yazıyor ama YENİ sürümden
+; kaldırılmış bir dosya klasörde öylece kalıyor. wwwroot en çok değişen
+; yer olduğu için kopyalamadan önce temizleniyor — eski video/font/css
+; artıkları güncellemeden güncellemeye birikmesin.
+Type: filesandordirs; Name: "{app}\wwwroot"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -352,6 +399,97 @@ begin
 end;
 #endif
 
+// ---------------------------------------------------------------------------
+// GÜNCELLEME TESPİTİ
+//
+// Inno, AppId aynı kaldığı sürece kurulu sürümü kendi buluyor ve üzerine
+// yazıyor: klasör, program grubu ve görev seçimleri önceki kurulumdan gelir,
+// klasör seçme sayfası atlanır. Burada eklediğimiz iki şey var:
+//   • sürüm karşılaştırması — elindeki setup kurulu olandan eskiyse
+//     kullanıcı bilerek onaylamadıkça devam etmiyoruz,
+//   • sihirbaz metinlerinin "kurulum" yerine "güncelleme" demesi.
+// ---------------------------------------------------------------------------
+
+var
+  PreviousVersion: String;
+
+// Kurulu sürümü Inno'nun kendi kaldırma kaydından okur.
+// PrivilegesRequired=lowest ile kayıt HKCU'ya yazılıyor; kullanıcı kurulumu
+// yönetici olarak yükseltmişse HKLM'e düşüyor — bu yüzden ikisine de bakıyoruz.
+function GetPreviousVersion: String;
+var
+  Key, V: String;
+begin
+  Result := '';
+  // Kaldırma kaydının adı: <AppId>_is1 — "_is1" son ekini Inno kendisi ekler.
+  Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\' + '{#MyAppId}' + '_is1';
+
+  if RegQueryStringValue(HKCU, Key, 'DisplayVersion', V) then
+    Result := V
+  else if RegQueryStringValue(HKLM, Key, 'DisplayVersion', V) then
+    Result := V;
+end;
+
+function InitializeSetup: Boolean;
+var
+  PrevPacked, ThisPacked: Int64;
+begin
+  Result := True;
+  PreviousVersion := GetPreviousVersion;
+
+  if PreviousVersion = '' then
+    Exit;
+
+  // Sürüm dizgilerini metin olarak karşılaştırmak yanlış sonuç verir
+  // ("1.10.0" < "1.9.0" çıkar), o yüzden Inno'nun paketlenmiş sürüm
+  // karşılaştırmasını kullanıyoruz. Ayrıştırılamazsa sessizce devam:
+  // güncellemeyi bir sürüm okuma hatası yüzünden engellemek istemeyiz.
+  if StrToVersion(PreviousVersion, PrevPacked)
+     and StrToVersion('{#MyAppVersion}', ThisPacked)
+     and (ComparePackedVersion(PrevPacked, ThisPacked) > 0) then
+  begin
+    if MsgBox('Bilgisayarında REVO ' + PreviousVersion + ' kurulu.' + #13#10 +
+              'Bu kurulum ise daha eski bir sürüm içeriyor: {#MyAppVersion}.' + #13#10#13#10 +
+              'Yine de eski sürüme dönmek istiyor musun?',
+              mbConfirmation, MB_YESNO) = IDNO then
+      Result := False;
+  end;
+end;
+
+// Güncellenecek klasöre gerçekten yazabiliyor muyuz?
+//
+// PrivilegesRequired=lowest ile kurulum normalde kullanıcı klasörüne gider.
+// Ama daha eski bir setup "herkes için kur" seçilerek çalıştırılmışsa
+// uygulama C:\Program Files\REVO'da olabilir; oraya yönetici hakkı olmadan
+// yazılamaz. UsePreviousAppDir o klasörü seçeceği için kopyalama yarıda
+// "erişim reddedildi" ile patlardı. Onun yerine önce yazma denemesi yapıp
+// ne yapılması gerektiğini anlatan bir mesajla duruyoruz.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Dir, Probe: String;
+begin
+  Result := '';
+  if PreviousVersion = '' then
+    Exit;
+
+  Dir := ExpandConstant('{app}');
+  if not DirExists(Dir) then
+    Exit;
+
+  Probe := AddBackslash(Dir) + 'revo-yazma-testi.tmp';
+  if SaveStringToFile(Probe, 'x', False) then
+    DeleteFile(Probe)
+  else
+    Result :=
+      'REVO şu klasörde kurulu ve buraya yazmak için yönetici hakkı gerekiyor:' + #13#10 +
+      Dir + #13#10#13#10 +
+      'İki yoldan biriyle çözebilirsin:' + #13#10#13#10 +
+      '  1) Kurulum dosyasına sağ tıklayıp "Yönetici olarak çalıştır" de.' + #13#10#13#10 +
+      '  2) Önce mevcut REVO''yu kaldır, sonra bu kurulumu tekrar çalıştır. ' +
+      'Bu durumda REVO kullanıcı klasörüne kurulur ve bundan sonraki ' +
+      'güncellemeler yönetici hakkı istemez. Önerilen yol budur.';
+end;
+
 procedure InitializeWizard;
 begin
   InitSineTable;
@@ -434,6 +572,17 @@ begin
   // ~25 FPS. Daha hızlısı görsel olarak fark yaratmıyor ama zayıf
   // makinelerde kurulum ilerlemesinden CPU çalmaya başlıyor.
   TimerHandle := SetTimer(0, 0, 40, CreateCallback(@AnimationTick));
+
+  // Üzerine kurulum yapılıyorsa karşılama metni bunu açıkça söylesin —
+  // kullanıcı "yanlışlıkla ikinci kez mi kuruyorum" diye tereddüt etmesin.
+  if PreviousVersion <> '' then
+  begin
+    WizardForm.WelcomeLabel1.Caption := 'REVO güncelleniyor';
+    WizardForm.WelcomeLabel2.Caption :=
+      'Kurulu sürüm: ' + PreviousVersion + '   →   Yeni sürüm: {#MyAppVersion}' + #13#10#13#10 +
+      'Mevcut kurulumun üzerine yazılacak; kısayolların ve klasör seçimin ' +
+      'olduğu gibi kalır. REVO şu anda açıksa kurulum onu kapatacak.';
+  end;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
@@ -444,6 +593,12 @@ begin
   begin
     Locked := True;
     DrawSpectrum;
+
+    // Bitiş metnini burada değiştiriyoruz: Inno bu başlığı sayfa
+    // gösterilirken kendi yazdığı için InitializeWizard'da yapılan
+    // değişiklik ezilirdi.
+    if PreviousVersion <> '' then
+      WizardForm.FinishedHeadingLabel.Caption := 'REVO güncellendi';
   end;
 end;
 

@@ -1,9 +1,6 @@
-*, *:hover, *:active, *:focus {
-  cursor: none !important;
-}
 :root {
-  --revo-cursor-primary: #22d3ee;
-  --revo-cursor-secondary: #a78bfa;
+  --revo-cursor-primary: #ffffff;
+  --revo-cursor-secondary: rgba(255, 255, 255, 0.42);
 }
 
 body.revo-cursor-active,
@@ -29,5 +26,5 @@ body.revo-cursor-active a {
   pointer-events: none;
   z-index: 2147483647;
   opacity: 1;
-  transition: opacity 0.25s ease;
+  transition: opacity 0.15s ease;
 }

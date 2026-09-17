@@ -1,3 +1,4 @@
+using System;
 using Microsoft.AspNetCore.Mvc;
 using RevoApp.Services;
 
@@ -18,6 +19,10 @@ public class ChatController : Controller
     public IActionResult Login(string? roomCode)
     {
         ViewBag.PrefilledRoomCode = roomCode;
+        var isPublic = string.IsNullOrWhiteSpace(roomCode)
+            || string.Equals(roomCode, RoomManager.PublicRoomCode, StringComparison.OrdinalIgnoreCase);
+        ViewBag.LobbyMode = isPublic ? "public" : "join";
+        SetPublicCount();
         return View();
     }
 
@@ -31,6 +36,8 @@ public class ChatController : Controller
         if (username is null)
         {
             ModelState.AddModelError("", "Lütfen bir kullanıcı adı girin.");
+            ViewBag.LobbyMode = "create";
+            SetPublicCount();
             return View("Login");
         }
 
@@ -57,6 +64,11 @@ public class ChatController : Controller
         if (username is null)
         {
             ModelState.AddModelError("", "Lütfen bir kullanıcı adı girin.");
+            ViewBag.PrefilledRoomCode = roomCode;
+            ViewBag.LobbyMode = string.Equals(roomCode, RoomManager.PublicRoomCode, StringComparison.OrdinalIgnoreCase)
+                ? "public"
+                : "join";
+            SetPublicCount();
             return View("Login");
         }
 
@@ -64,6 +76,8 @@ public class ChatController : Controller
         {
             ModelState.AddModelError("", "Oda bulunamadı.");
             ViewBag.PrefilledRoomCode = roomCode;
+            ViewBag.LobbyMode = "join";
+            SetPublicCount();
             return View("Login");
         }
 
@@ -71,6 +85,8 @@ public class ChatController : Controller
         {
             ModelState.AddModelError("", "Şifre hatalı.");
             ViewBag.PrefilledRoomCode = roomCode;
+            ViewBag.LobbyMode = "join";
+            SetPublicCount();
             return View("Login");
         }
 
@@ -92,11 +108,12 @@ public class ChatController : Controller
         if (username is null || string.IsNullOrWhiteSpace(room))
             return RedirectToAction("Login");
 
-        if (!_roomManager.TryGetRoom(room, out _))
+        if (!_roomManager.TryGetRoom(room, out var found) || found is null)
             return RedirectToAction("Login");
 
         ViewBag.Username = username;
-        ViewBag.RoomCode = room;
+        ViewBag.RoomCode = found.Code;
+        ViewBag.RoomName = found.Name;
         // TempData bir kez okunduğunda otomatik temizlenir — sayfa yenilendiğinde
         // (F5) burası null gelir, bu durumu Index.cshtml tarafında "JoinError" ile
         // ele alıp kullanıcıyı Login'e (kod önceden dolu) geri yönlendiriyoruz.
@@ -114,5 +131,17 @@ public class ChatController : Controller
             username = username.Substring(0, 24);
 
         return username;
+    }
+
+    private void SetPublicCount()
+    {
+        _roomManager.TryGetRoom(RoomManager.PublicRoomCode, out var publicRoom);
+        var users = publicRoom?.Users.Values.ToList() ?? [];
+        ViewBag.PublicCount = users.Count;
+        ViewBag.PublicNames = users
+            .Select(u => u.Username)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Take(3)
+            .ToList();
     }
 }

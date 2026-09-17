@@ -4,18 +4,23 @@
    bu değişkenlerin tanımlı olmadığı sayfalar için aşağıda fallback var. */
 
 :root {
-    --tb-bg: #0b0e13;
+    --tb-bg: #000000;
     --tb-bg-hover: rgba(255, 255, 255, 0.055);
-    --tb-border: #1c232c;
-    --tb-text: #8a93a3;
-    --tb-text-strong: #edebe6;
-    --tb-amber: #e3a857;
-    --tb-signal: #3ecfc0;
+    --tb-border: rgba(255, 255, 255, 0.14);
+    --tb-text: rgba(255, 255, 255, 0.62);
+    --tb-text-strong: #ffffff;
+    --tb-amber: #ffffff;
+    --tb-signal: #ffffff;
     --tb-danger: #c1594a;
     --tb-height: 34px;
     /* REVO her zaman koyu temalı — form elemanları, seçim rengi ve
        varsayılan kontroller de koyu varyantı kullansın. */
     color-scheme: dark;
+}
+
+::selection {
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
 }
 
 html, body {
@@ -41,7 +46,7 @@ html, body {
     z-index: 100000;
     user-select: none;
     -webkit-user-select: none;
-    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-family: 'Sora', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
 /* Alt kenarlık: soldan sağa amber → sinyal yeşili → sönümlenme.
@@ -55,14 +60,8 @@ html, body {
     right: 0;
     bottom: 0;
     height: 1px;
-    background: linear-gradient(
-        90deg,
-        var(--tb-amber) 0%,
-        var(--tb-signal) 22%,
-        var(--tb-border) 55%,
-        var(--tb-border) 100%
-    );
-    opacity: 0.55;
+    background: rgba(255, 255, 255, 0.14);
+    opacity: 1;
     pointer-events: none;
 }
 
@@ -78,16 +77,14 @@ html, body {
 }
 
 .revo-titlebar__logo {
-    width: 14px;
-    height: 14px;
-    border-radius: 4px;
-    background: linear-gradient(135deg, var(--tb-amber), #a8712c 85%);
-    box-shadow: 0 0 0 1px rgba(227, 168, 87, 0.22), 0 0 10px rgba(227, 168, 87, 0.18);
+    width: 10px;
+    height: 10px;
+    background: #ffffff;
     flex-shrink: 0;
 }
 
 .revo-titlebar__title {
-    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
     font-size: 10.5px;
     letter-spacing: 2.2px;
     text-transform: uppercase;
@@ -198,8 +195,8 @@ html, body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, var(--tb-signal), var(--tb-amber));
-    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.28);
+    border-radius: 0;
     /* Şeffaf kenarlık + background-clip, tutamağın kenarlardan nefes almasını
        sağlıyor; kanala yapışık kalın bir çubuk yerine ince, yüzen bir şerit. */
     border: 3px solid transparent;
@@ -207,7 +204,7 @@ html, body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--tb-amber);
+    background: rgba(255, 255, 255, 0.45);
     border: 2px solid transparent;
     background-clip: padding-box;
 }
