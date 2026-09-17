@@ -153,7 +153,7 @@
                         <line x1="12" y1="17" x2="12" y2="21"></line>
                     </svg>
                 </button>
-                <button id="noiseSuppressionButton" class="ctrl-btn ctrl-btn--live" type="button" aria-pressed="true" aria-label="Gürültü engellemeyi kapat" data-tip="Gürültü engelleme" disabled>
+                <button id="noiseSuppressionButton" class="ctrl-btn ctrl-btn--live" type="button" aria-pressed="false" aria-label="Gürültü engellemeyi aç" data-tip="Gürültü engelleme">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M2 13h2.5l1.8-5.5 2.4 11 2.6-13 2 7.5h2.2"></path>
                         <path d="M19 3.5 L19.6 5 L21 5.6 L19.6 6.2 L19 7.7 L18.4 6.2 L17 5.6 L18.4 5 Z" fill="currentColor" stroke="none"></path>
@@ -229,6 +229,8 @@
                 </label>
                 <label class="check"><input type="checkbox" id="echoCancelCheck" checked /> Yankı iptali</label>
                 <p class="hint" id="echoCancelHint">Aynı PC’de iki pencere deniyorsan bunu kapat veya kulaklık tak — hoparlör, senin sesini eko sanıp mikrofona kilit vurur.</p>
+                <label class="check"><input type="checkbox" id="noiseSuppressCheck" /> Gürültü engelleme</label>
+                <p class="hint" id="noiseSuppressHint">Sessiz veya ucuz mikrofonlarda sesi yutabilir. Kapalı bırakmak genelde daha net konuşma verir.</p>
                 <label class="check"><input type="checkbox" id="autoGainCheck" checked /> Otomatik kazanç</label>
                 <label class="check"><input type="checkbox" id="soundFxCheck" checked /> Katılma sesi</label>
             </div>

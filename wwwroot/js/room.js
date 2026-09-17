@@ -1,6 +1,6 @@
 /* REVO oda istemcisi — SignalR sinyalleşme + WebRTC mesh.
-   Betik ES modülü değil: gürültü engelleme dinamik import ile yüklenir,
-   başarısız olursa sohbet ham mikrofonla devam eder. */
+   Gürültü engelleme varsayılan kapalı: tarayıcı NS (getUserMedia).
+   RNNoise dest stream sessiz/ucuz mikrofonda sesi yuttuğu için gönderilmez. */
 
 function revoFatal(label, detail) {
     console.error(label, detail);
@@ -59,6 +59,7 @@ window.addEventListener("unhandledrejection", function (e) {
         echo: "revo_echo",
         agc: "revo_agc",
         sfx: "revo_sfx",
+        ns: "revo_ns",
     };
 
     function readStore(key, fallback) {
@@ -95,7 +96,7 @@ window.addEventListener("unhandledrejection", function (e) {
     let localStream = null;
     let rawStream = null;
     let cleanStream = null;
-    let noiseSuppressionEnabled = true;
+    let noiseSuppressionEnabled = readStore(STORE.ns, "0") === "1";
     let suppressorCtx = null;
     let rnnoiseNode = null;
     let isMuted = false;
@@ -157,6 +158,7 @@ window.addEventListener("unhandledrejection", function (e) {
     const echoCancelCheck = document.getElementById("echoCancelCheck");
     const autoGainCheck = document.getElementById("autoGainCheck");
     const soundFxCheck = document.getElementById("soundFxCheck");
+    const noiseSuppressCheck = document.getElementById("noiseSuppressCheck");
 
     const ICON = {
         micOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 9v3a3 3 0 0 0 5.1 2.1"/><path d="M15 5.1V4a3 3 0 0 0-5.8-1"/><path d="M12 19v4"/><path d="M8 23h8"/><path d="M19 10v2a7 7 0 0 1-1.3 4.1"/><path d="M5 10v2a7 7 0 0 0 11 5.2"/><line x1="2" y1="2" x2="22" y2="22"/></svg>',
@@ -1118,26 +1120,14 @@ window.addEventListener("unhandledrejection", function (e) {
     }
 
     async function buildCleanStream(sourceStream) {
-        const { loadRnnoise, RnnoiseWorkletNode } = await import("/js/noise-suppressor/index.js");
-
-        suppressorCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        suppressorCtx = new Ctx({ sampleRate: 48000 });
         const sourceNode = suppressorCtx.createMediaStreamSource(sourceStream);
         startSelfVad(suppressorCtx, sourceNode);
-
-        await suppressorCtx.audioWorklet.addModule("/js/noise-suppressor/rnnoise/workletProcessor.js");
-
-        const wasmBinary = await loadRnnoise({
-            url: "/js/noise-suppressor/rnnoise.wasm",
-            simdUrl: "/js/noise-suppressor/rnnoise_simd.wasm",
-        });
-
-        rnnoiseNode = new RnnoiseWorkletNode(suppressorCtx, { maxChannels: 1, wasmBinary });
-        const destinationNode = suppressorCtx.createMediaStreamDestination();
-        sourceNode.connect(rnnoiseNode).connect(destinationNode);
         if (suppressorCtx.state === "suspended") {
             await suppressorCtx.resume();
         }
-        return destinationNode.stream;
+        return null;
     }
 
     async function teardownNoisePipeline() {
@@ -1158,7 +1148,7 @@ window.addEventListener("unhandledrejection", function (e) {
         const audio = {
             echoCancellation,
             autoGainControl,
-            noiseSuppression: false,
+            noiseSuppression: noiseSuppressionEnabled,
         };
         if (selectedMicId) audio.deviceId = { exact: selectedMicId };
         return { audio };
@@ -1201,6 +1191,17 @@ window.addEventListener("unhandledrejection", function (e) {
         updateEffectiveMicState();
     }
 
+    function syncNsButton() {
+        const btn = document.getElementById("noiseSuppressionButton");
+        if (btn) {
+            btn.disabled = false;
+            btn.setAttribute("aria-pressed", String(!!noiseSuppressionEnabled));
+            btn.setAttribute("aria-label", noiseSuppressionEnabled ? "Gürültü engellemeyi kapat" : "Gürültü engellemeyi aç");
+        }
+        const check = document.getElementById("noiseSuppressCheck");
+        if (check) check.checked = !!noiseSuppressionEnabled;
+    }
+
     async function acquireMicStream() {
         try {
             return await navigator.mediaDevices.getUserMedia(audioConstraints());
@@ -1209,7 +1210,7 @@ window.addEventListener("unhandledrejection", function (e) {
                 selectedMicId = "";
                 persistDevices();
                 return await navigator.mediaDevices.getUserMedia({
-                    audio: { echoCancellation, autoGainControl, noiseSuppression: false },
+                    audio: { echoCancellation, autoGainControl, noiseSuppression: noiseSuppressionEnabled },
                 });
             }
             throw err;
@@ -1252,17 +1253,12 @@ window.addEventListener("unhandledrejection", function (e) {
         await teardownNoisePipeline();
         rawStream = newRaw;
 
-        const nsButton = document.getElementById("noiseSuppressionButton");
         try {
-            cleanStream = await buildCleanStream(rawStream);
-            nsButton.disabled = false;
-            nsButton.setAttribute("aria-pressed", String(noiseSuppressionEnabled));
+            await buildCleanStream(rawStream);
+            syncNsButton();
         } catch (err) {
-            console.error("Gürültü engelleme başlatılamadı, ham mikrofon kullanılacak:", err);
-            cleanStream = null;
-            noiseSuppressionEnabled = false;
-            nsButton.disabled = true;
-            nsButton.title = "Gürültü engelleme bu tarayıcıda kullanılamıyor";
+            console.error("Mikrofon ölçümü başlatılamadı:", err);
+            syncNsButton();
             if (!suppressorCtx) {
                 const Ctx = window.AudioContext || window.webkitAudioContext;
                 suppressorCtx = new Ctx({ sampleRate: 48000 });
@@ -1316,21 +1312,25 @@ window.addEventListener("unhandledrejection", function (e) {
         await refreshDeviceLists();
     }
 
-    async function toggleNoiseSuppression() {
-        if (!cleanStream || !rawStream) return;
-
-        noiseSuppressionEnabled = !noiseSuppressionEnabled;
-        stopDetachedSendStream();
-        if (noiseSuppressionEnabled && cleanStream && suppressorCtx && suppressorCtx.state === "running") {
-            localStream = cleanStream;
-        } else {
-            localStream = sendStreamFromRaw();
+    async function setNoiseSuppression(enabled) {
+        const next = !!enabled;
+        if (noiseSuppressionEnabled === next) {
+            syncNsButton();
+            return;
         }
-        await replaceAudioTrackEverywhere();
+        noiseSuppressionEnabled = next;
+        writeStore(STORE.ns, noiseSuppressionEnabled ? "1" : "0");
+        syncNsButton();
+        try {
+            await switchAudioInput(selectedMicId);
+        } catch (err) {
+            console.error("Gürültü engelleme değiştirilemedi:", err);
+            appendSystemMessage("Gürültü engelleme değiştirilemedi.");
+        }
+    }
 
-        const btn = document.getElementById("noiseSuppressionButton");
-        btn.setAttribute("aria-pressed", String(noiseSuppressionEnabled));
-        btn.setAttribute("aria-label", noiseSuppressionEnabled ? "Gürültü engellemeyi kapat" : "Gürültü engellemeyi aç");
+    function toggleNoiseSuppression() {
+        return setNoiseSuppression(!noiseSuppressionEnabled);
     }
 
     function fillSelect(select, devices, selected, fallbackLabel) {
@@ -1410,6 +1410,7 @@ window.addEventListener("unhandledrejection", function (e) {
         echoCancelCheck.checked = echoCancellation;
         autoGainCheck.checked = autoGainControl;
         soundFxCheck.checked = soundFxEnabled;
+        syncNsButton();
         setOverlayOpen(settingsOverlay, true);
         if (!document.getElementById("echoCancelHint") && echoCancelCheck && echoCancelCheck.parentElement) {
             const hint = document.createElement("p");
@@ -1418,6 +1419,8 @@ window.addEventListener("unhandledrejection", function (e) {
             hint.textContent = "Aynı PC’de iki pencere deniyorsan yankı iptalini kapat veya kulaklık tak — hoparlör, senin sesini eko sanıp mikrofona kilit vurur.";
             echoCancelCheck.parentElement.after(hint);
         }
+        ensureNsSettingsRow();
+        bindNsCheck(document.getElementById("noiseSuppressCheck"));
         try { await ensureLocalStream(); } catch { /* izin yoksa liste boş kalır */ }
         await refreshDeviceLists();
         await startCameraPreview();
@@ -2063,6 +2066,36 @@ window.addEventListener("unhandledrejection", function (e) {
         switchAudioInput(selectedMicId).catch((err) => console.error(err));
     });
 
+    function ensureNsSettingsRow() {
+        if (document.getElementById("noiseSuppressCheck")) return;
+        const host = autoGainCheck && autoGainCheck.parentElement && autoGainCheck.parentElement.parentElement;
+        if (!host) return;
+        const label = document.createElement("label");
+        label.className = "check";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.id = "noiseSuppressCheck";
+        input.checked = !!noiseSuppressionEnabled;
+        label.appendChild(input);
+        label.appendChild(document.createTextNode(" Gürültü engelleme"));
+        const hint = document.createElement("p");
+        hint.className = "hint";
+        hint.id = "noiseSuppressHint";
+        hint.textContent = "Sessiz veya ucuz mikrofonlarda sesi yutabilir. Kapalı bırakmak genelde daha net konuşma verir.";
+        host.insertBefore(label, autoGainCheck.parentElement);
+        host.insertBefore(hint, autoGainCheck.parentElement);
+        bindNsCheck(input);
+    }
+
+    function bindNsCheck(el) {
+        if (!el || el.dataset.nsBound === "1") return;
+        el.dataset.nsBound = "1";
+        el.addEventListener("change", () => {
+            setNoiseSuppression(el.checked).catch((err) => console.error(err));
+        });
+    }
+    bindNsCheck(noiseSuppressCheck);
+
     autoGainCheck.addEventListener("change", () => {
         autoGainControl = autoGainCheck.checked;
         writeStore(STORE.agc, autoGainControl ? "1" : "0");
@@ -2171,6 +2204,7 @@ window.addEventListener("unhandledrejection", function (e) {
 
     updatePttKeyButton();
     setMicMode(micMode);
+    syncNsButton();
 
     window.addEventListener("blur", () => {
         if (pttActive) {
