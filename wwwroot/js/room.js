@@ -903,7 +903,7 @@ window.addEventListener("unhandledrejection", function (e) {
             if (bar.style.height !== next) bar.style.height = next;
         });
         const now = performance.now();
-        if (level > 0.12) speakingUntil.set(connectionId, now + 320);
+        if (level > 0.07) speakingUntil.set(connectionId, now + 420);
         const speaking = (speakingUntil.get(connectionId) || 0) > now;
         if (row.classList.contains("speaking") !== speaking) {
             row.classList.toggle("speaking", speaking);
@@ -950,21 +950,26 @@ window.addEventListener("unhandledrejection", function (e) {
 
         const source = sharedAudioCtx.createMediaStreamSource(stream);
         const analyser = sharedAudioCtx.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.6;
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = 0.45;
         source.connect(analyser);
-        const data = new Uint8Array(analyser.frequencyBinCount);
+        const td = new Uint8Array(analyser.fftSize);
 
         (function tick() {
             if (levelMeterTokens.get(connectionId) !== token) return;
             requestAnimationFrame(tick);
-            if (document.hidden) return;
-            analyser.getByteFrequencyData(data);
-            let sum = 0;
-            for (let i = 0; i < data.length; i++) sum += data[i];
-            const level = Math.min(1, (sum / data.length) / 60);
-            applyLevelToRow(connectionId, level);
+            if (sharedAudioCtx.state === "suspended") {
+                sharedAudioCtx.resume().catch(() => {});
+            }
+            analyser.getByteTimeDomainData(td);
+            let energy = 0;
+            for (let i = 0; i < td.length; i++) {
+                const v = (td[i] - 128) / 128;
+                energy += v * v;
+            }
+            const level = Math.min(1, Math.sqrt(energy / td.length) * 5);
             if (connectionId === "__self__") noteSelfLevel(level);
+            if (!document.hidden) applyLevelToRow(connectionId, level);
         })();
     }
 
@@ -1010,15 +1015,22 @@ window.addEventListener("unhandledrejection", function (e) {
             if (!p.audioEl) {
                 const audioEl = document.createElement("audio");
                 audioEl.autoplay = true;
-                document.getElementById("remoteAudios").appendChild(audioEl);
+                audioEl.playsInline = true;
+                audioEl.setAttribute("playsinline", "");
+                audioEl.setAttribute("autoplay", "");
+                const host = document.getElementById("remoteAudios") || document.body;
+                host.appendChild(audioEl);
                 p.audioEl = audioEl;
                 applyAudioOutput(audioEl);
             }
-            if (p.audioEl.srcObject !== event.streams[0]) {
-                p.audioEl.srcObject = event.streams[0];
+            const remote = event.streams[0] || new MediaStream([event.track]);
+            if (p.audioEl.srcObject !== remote) {
+                p.audioEl.srcObject = remote;
             }
+            const play = p.audioEl.play();
+            if (play && typeof play.catch === "function") play.catch(() => {});
             applyParticipantGain(p);
-            startLevelMeter(event.streams[0], connectionId);
+            startLevelMeter(remote, connectionId);
         };
 
         pc.onconnectionstatechange = () => renderParticipantList();
@@ -1079,10 +1091,39 @@ window.addEventListener("unhandledrejection", function (e) {
         });
     }
 
+    function startSelfVad(ctx, sourceNode) {
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = 0.45;
+        sourceNode.connect(analyser);
+        const token = {};
+        levelMeterTokens.set("__self__", token);
+        const td = new Uint8Array(analyser.fftSize);
+        (function tick() {
+            if (levelMeterTokens.get("__self__") !== token) return;
+            requestAnimationFrame(tick);
+            if (ctx.state === "suspended") {
+                ctx.resume().catch(() => {});
+            }
+            analyser.getByteTimeDomainData(td);
+            let energy = 0;
+            for (let i = 0; i < td.length; i++) {
+                const v = (td[i] - 128) / 128;
+                energy += v * v;
+            }
+            const level = Math.min(1, Math.sqrt(energy / td.length) * 5);
+            noteSelfLevel(level);
+            if (!document.hidden) applyLevelToRow("__self__", level);
+        })();
+    }
+
     async function buildCleanStream(sourceStream) {
         const { loadRnnoise, RnnoiseWorkletNode } = await import("/js/noise-suppressor/index.js");
 
         suppressorCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+        const sourceNode = suppressorCtx.createMediaStreamSource(sourceStream);
+        startSelfVad(suppressorCtx, sourceNode);
+
         await suppressorCtx.audioWorklet.addModule("/js/noise-suppressor/rnnoise/workletProcessor.js");
 
         const wasmBinary = await loadRnnoise({
@@ -1090,15 +1131,17 @@ window.addEventListener("unhandledrejection", function (e) {
             simdUrl: "/js/noise-suppressor/rnnoise_simd.wasm",
         });
 
-        const sourceNode = suppressorCtx.createMediaStreamSource(sourceStream);
         rnnoiseNode = new RnnoiseWorkletNode(suppressorCtx, { maxChannels: 1, wasmBinary });
         const destinationNode = suppressorCtx.createMediaStreamDestination();
         sourceNode.connect(rnnoiseNode).connect(destinationNode);
-
+        if (suppressorCtx.state === "suspended") {
+            await suppressorCtx.resume();
+        }
         return destinationNode.stream;
     }
 
     async function teardownNoisePipeline() {
+        levelMeterTokens.delete("__self__");
         if (rnnoiseNode) {
             try { rnnoiseNode.disconnect(); } catch { /* */ }
             try { rnnoiseNode.destroy(); } catch { /* */ }
@@ -1130,7 +1173,7 @@ window.addEventListener("unhandledrejection", function (e) {
         } else if (micMode === "ptt") {
             shouldTransmit = pttActive;
         } else {
-            shouldTransmit = vadThreshold <= 0 ? true : vadOpen;
+            shouldTransmit = true;
         }
 
         localStream.getAudioTracks().forEach((track) => { track.enabled = shouldTransmit; });
@@ -1140,8 +1183,8 @@ window.addEventListener("unhandledrejection", function (e) {
             indicator.textContent = isDeafened ? "kulaklık kapalı" : "";
             indicator.className = "tx-indicator";
         } else if (micMode === "always") {
-            indicator.textContent = vadThreshold > 0 && !shouldTransmit ? "sessizlik" : "";
-            indicator.className = "tx-indicator" + (shouldTransmit ? "" : " gated");
+            indicator.textContent = "";
+            indicator.className = "tx-indicator";
         } else {
             indicator.textContent = shouldTransmit ? "aktarılıyor" : "beklemede";
             indicator.className = "tx-indicator" + (shouldTransmit ? " on" : " gated");
@@ -1173,7 +1216,36 @@ window.addEventListener("unhandledrejection", function (e) {
         }
     }
 
+    function stopDetachedSendStream() {
+        if (localStream && localStream !== rawStream && localStream !== cleanStream) {
+            localStream.getTracks().forEach((t) => {
+                try { t.stop(); } catch { /* */ }
+            });
+        }
+    }
+
+    function sendStreamFromRaw() {
+        const clones = (rawStream ? rawStream.getAudioTracks() : []).map((t) => t.clone());
+        return clones.length ? new MediaStream(clones) : rawStream;
+    }
+
+    function resumeAudioGraph() {
+        if (sharedAudioCtx && sharedAudioCtx.state === "suspended") {
+            sharedAudioCtx.resume().catch(() => {});
+        }
+        if (suppressorCtx && suppressorCtx.state === "suspended") {
+            suppressorCtx.resume().catch(() => {});
+        }
+        for (const p of participants.values()) {
+            if (p.audioEl && p.audioEl.paused && p.audioEl.srcObject) {
+                const play = p.audioEl.play();
+                if (play && typeof play.catch === "function") play.catch(() => {});
+            }
+        }
+    }
+
     async function wireLocalAudio(newRaw) {
+        stopDetachedSendStream();
         if (rawStream && rawStream !== newRaw) {
             rawStream.getTracks().forEach((t) => t.stop());
         }
@@ -1183,18 +1255,26 @@ window.addEventListener("unhandledrejection", function (e) {
         const nsButton = document.getElementById("noiseSuppressionButton");
         try {
             cleanStream = await buildCleanStream(rawStream);
-            localStream = noiseSuppressionEnabled ? cleanStream : rawStream;
             nsButton.disabled = false;
             nsButton.setAttribute("aria-pressed", String(noiseSuppressionEnabled));
         } catch (err) {
             console.error("Gürültü engelleme başlatılamadı, ham mikrofon kullanılacak:", err);
-            localStream = rawStream;
+            cleanStream = null;
             noiseSuppressionEnabled = false;
             nsButton.disabled = true;
             nsButton.title = "Gürültü engelleme bu tarayıcıda kullanılamıyor";
+            if (!suppressorCtx) {
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                suppressorCtx = new Ctx({ sampleRate: 48000 });
+                const sourceNode = suppressorCtx.createMediaStreamSource(rawStream);
+                startSelfVad(suppressorCtx, sourceNode);
+                if (suppressorCtx.state === "suspended") {
+                    suppressorCtx.resume().catch(() => {});
+                }
+            }
         }
 
-        startLevelMeter(localStream, "__self__");
+        localStream = sendStreamFromRaw();
         updateEffectiveMicState();
         return localStream;
     }
@@ -1202,15 +1282,21 @@ window.addEventListener("unhandledrejection", function (e) {
     async function replaceAudioTrackEverywhere() {
         const newTrack = localStream && localStream.getAudioTracks()[0];
         if (!newTrack) return;
+        let added = false;
         for (const p of participants.values()) {
             if (!p.pc) continue;
             const sender = p.pc.getSenders().find((s) => s.track && s.track.kind === "audio");
             if (sender) {
                 try { await sender.replaceTrack(newTrack); }
                 catch (err) { console.error("Ses track'i değiştirilemedi:", err); }
+            } else {
+                const next = p.pc.addTrack(newTrack, localStream);
+                tuneAudioSender(next);
+                added = true;
             }
         }
         updateEffectiveMicState();
+        if (added) await renegotiateAll();
     }
 
     async function ensureLocalStream() {
@@ -1231,11 +1317,15 @@ window.addEventListener("unhandledrejection", function (e) {
     }
 
     async function toggleNoiseSuppression() {
-        if (!cleanStream) return;
+        if (!cleanStream || !rawStream) return;
 
         noiseSuppressionEnabled = !noiseSuppressionEnabled;
-        const targetStream = noiseSuppressionEnabled ? cleanStream : rawStream;
-        localStream = targetStream;
+        stopDetachedSendStream();
+        if (noiseSuppressionEnabled && cleanStream && suppressorCtx && suppressorCtx.state === "running") {
+            localStream = cleanStream;
+        } else {
+            localStream = sendStreamFromRaw();
+        }
         await replaceAudioTrackEverywhere();
 
         const btn = document.getElementById("noiseSuppressionButton");
@@ -1321,6 +1411,13 @@ window.addEventListener("unhandledrejection", function (e) {
         autoGainCheck.checked = autoGainControl;
         soundFxCheck.checked = soundFxEnabled;
         setOverlayOpen(settingsOverlay, true);
+        if (!document.getElementById("echoCancelHint") && echoCancelCheck && echoCancelCheck.parentElement) {
+            const hint = document.createElement("p");
+            hint.className = "hint";
+            hint.id = "echoCancelHint";
+            hint.textContent = "Aynı PC’de iki pencere deniyorsan yankı iptalini kapat veya kulaklık tak — hoparlör, senin sesini eko sanıp mikrofona kilit vurur.";
+            echoCancelCheck.parentElement.after(hint);
+        }
         try { await ensureLocalStream(); } catch { /* izin yoksa liste boş kalır */ }
         await refreshDeviceLists();
         await startCameraPreview();
@@ -1735,7 +1832,6 @@ window.addEventListener("unhandledrejection", function (e) {
         } catch (err) {
             console.error("Mikrofon erişim hatası:", err);
             appendSystemMessage("Odaya sesli katılmak için mikrofon erişimine izin vermelisin.");
-            return;
         }
         for (const u of users) {
             const p = getOrCreateParticipant(u.connectionId, u.username, u.avatarUrl);
@@ -1763,7 +1859,6 @@ window.addEventListener("unhandledrejection", function (e) {
         } catch (err) {
             console.error("Mikrofon erişim hatası:", err);
             appendSystemMessage("Odaya sesli katılmak için mikrofon erişimine izin vermelisin.");
-            return;
         }
         const offer = JSON.parse(offerStr);
         const pc = createPeerConnectionFor(senderConnectionId);
@@ -2121,8 +2216,10 @@ window.addEventListener("unhandledrejection", function (e) {
             setStatus(true);
             return connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword, currentAvatarUrl);
         })
-        .then(() => {
+        .then(async () => {
             renderParticipantList();
+            try { await ensureLocalStream(); }
+            catch { appendSystemMessage("Odaya sesli katılmak için mikrofon erişimine izin vermelisin."); }
             return announceLocalMedia();
         })
         .catch((err) => {
@@ -2133,14 +2230,18 @@ window.addEventListener("unhandledrejection", function (e) {
 
     connection.onreconnecting(() => setStatus(false));
 
-    connection.onreconnected(() => {
+    connection.onreconnected(async () => {
         setStatus(true);
         participants.forEach((p, id) => teardownParticipant(id));
-        connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword, currentAvatarUrl)
-            .then(() => {
-                renderParticipantList();
-                return announceLocalMedia();
-            });
+        try {
+            await connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword, currentAvatarUrl);
+            renderParticipantList();
+            try { await ensureLocalStream(); }
+            catch { appendSystemMessage("Odaya sesli katılmak için mikrofon erişimine izin vermelisin."); }
+            await announceLocalMedia();
+        } catch (err) {
+            console.error("Yeniden katılım hatası:", err);
+        }
     });
 
     masterVolumeSlider.value = String(Math.round(masterVolume * 100));
@@ -2154,4 +2255,6 @@ window.addEventListener("unhandledrejection", function (e) {
     setRoomChrome(currentRoomCode, currentRoomName);
     syncSelfState();
     renderParticipantList();
+    document.addEventListener("pointerdown", resumeAudioGraph);
+    document.addEventListener("keydown", resumeAudioGraph);
 })();
