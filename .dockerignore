@@ -1,0 +1,11 @@
+.git
+.vs
+bin
+obj
+node_modules
+test-results
+playwright-report
+artifacts
+tests
+installer
+*.user

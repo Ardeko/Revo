@@ -18,6 +18,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="tests/**;node_modules/**" />
+    <Content Remove="tests/**;node_modules/**" />
+    <None Remove="tests/**;node_modules/**" />
     <!-- Microsoft.AspNetCore.SignalR .NET 10 paylaşılan çatısına (shared framework)
          dahil geldi, ayrı pakete gerek yok — NU1510 uyarısının nedeni buydu.
          Photino.NET'in gerçek GitHub etiketlerinden doğrulanmış son sürümü v4.0.16 —

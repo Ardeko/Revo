@@ -71,11 +71,18 @@ static async Task RunServerAsync(string[] commandLineArgs)
 
     var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     {
-        Args = commandLineArgs,
+        // ASP.NET's configuration parser treats a bare --web as a key and
+        // consumes the next argument (including --urls) as its value.
+        Args = commandLineArgs.Where(argument => argument != "--web"
+            && !argument.StartsWith("--server=", StringComparison.OrdinalIgnoreCase)).ToArray(),
         // wwwroot'u çalışma dizinine değil, uygulamanın yanına göre çöz —
         // konteynerde ya da servis olarak başlatıldığında çalışma dizini
         // farklı olabiliyor.
-        WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot")
+        // Older builds created an empty bin/wwwroot directory, so checking
+        // only Directory.Exists would keep choosing that empty directory.
+        WebRootPath = File.Exists(Path.Combine(AppContext.BaseDirectory, "wwwroot", "js", "room.js"))
+            ? Path.Combine(AppContext.BaseDirectory, "wwwroot")
+            : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot")
     });
 
     builder.Services.AddControllersWithViews();
@@ -85,6 +92,8 @@ static async Task RunServerAsync(string[] commandLineArgs)
     builder.Services.AddSignalR(options =>
     {
         options.MaximumReceiveMessageSize = 128 * 1024;
+        options.KeepAliveInterval = TimeSpan.FromSeconds(10);
+        options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
     });
 
     // Odaları tutan servis — tekil (Singleton) olmalı çünkü tüm bağlantılar

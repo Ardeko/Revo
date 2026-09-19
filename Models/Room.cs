@@ -30,6 +30,9 @@ namespace RevoApp.Models
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+        // Preserve an empty room briefly so a dropped participant can reconnect.
+        public DateTimeOffset? EmptySince { get; set; }
+
         // ConnectionId -> katılımcı (kullanıcı adı + varsa profil resmi).
         // Oda bazlı olduğu için artık ChatHub'daki eski global sözlüğün
         // yerini bu alıyor.

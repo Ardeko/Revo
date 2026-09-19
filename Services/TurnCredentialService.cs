@@ -30,9 +30,12 @@ public class TurnCredentialService
     // Cloudflare'in ürettiği kimlik bilgisi TTL süresince geçerli. Her sayfa
     // açılışında yeni istek atmak yerine sunucuda tutuyoruz — hem Cloudflare'e
     // gereksiz yük binmiyor hem odaya giriş hızlanıyor.
-    private static readonly SemaphoreSlim CacheLock = new(1, 1);
-    private static string? _cachedJson;
-    private static DateTimeOffset _cachedUntil = DateTimeOffset.MinValue;
+    private readonly SemaphoreSlim _cacheLock = new(1, 1);
+    private string? _cachedJson;
+    private DateTimeOffset _cachedUntil = DateTimeOffset.MinValue;
+    private DateTimeOffset _credentialExpiresAt = DateTimeOffset.MinValue;
+    private DateTimeOffset _retryAfter = DateTimeOffset.MinValue;
+    private bool _warnedMissingConfiguration;
 
     private const int CredentialTtlSeconds = 6 * 60 * 60; // 6 saat
     private const int CacheSafetyMarginSeconds = 30 * 60; // bitmeden 30 dk önce yenile
@@ -40,7 +43,7 @@ public class TurnCredentialService
     // TURN yapılandırılmamışsa buna düşüyoruz. Tek başına STUN çoğu bağlantıda
     // çalışır — sadece "her zaman" çalışmaz.
     private const string StunOnlyFallback =
-        """{"iceServers":[{"urls":["stun:stun.cloudflare.com:3478","stun:stun.l.google.com:19302"]}]}""";
+        """{"iceServers":[{"urls":["stun:stun.cloudflare.com:3478","stun:stun.l.google.com:19302"]}],"relayAvailable":false}""";
 
     public TurnCredentialService(
         IHttpClientFactory httpClientFactory,
@@ -61,9 +64,11 @@ public class TurnCredentialService
 
         if (string.IsNullOrWhiteSpace(keyId) || string.IsNullOrWhiteSpace(apiToken))
         {
-            _logger.LogWarning(
-                "TURN yapılandırılmamış (Turn:KeyId / Turn:ApiToken boş). " +
-                "Sadece STUN kullanılacak — kısıtlı ağlardaki kullanıcılar bağlanamayabilir.");
+            if (!_warnedMissingConfiguration)
+            {
+                _warnedMissingConfiguration = true;
+                _logger.LogWarning("TURN yapılandırılmamış (Turn:KeyId / Turn:ApiToken boş). Kısıtlı ağlar için TURN gerekli.");
+            }
             return StunOnlyFallback;
         }
 
@@ -72,7 +77,7 @@ public class TurnCredentialService
             return _cachedJson;
         }
 
-        await CacheLock.WaitAsync(cancellationToken);
+        await _cacheLock.WaitAsync(cancellationToken);
         try
         {
             // Kilidi beklerken başka bir istek zaten yenilemiş olabilir.
@@ -80,13 +85,14 @@ public class TurnCredentialService
             {
                 return _cachedJson;
             }
+            if (DateTimeOffset.UtcNow < _retryAfter) return ValidCachedCredentialsOrFallback();
 
             var client = _httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(10);
 
-            var request = new HttpRequestMessage(
+            using var request = new HttpRequestMessage(
                 HttpMethod.Post,
-                $"https://rtc.live.cloudflare.com/v1/turn/keys/{keyId}/credentials/generate-ice-servers")
+                $"https://rtc.live.cloudflare.com/v1/turn/keys/{Uri.EscapeDataString(keyId)}/credentials/generate-ice-servers")
             {
                 Content = new StringContent(
                     JsonSerializer.Serialize(new { ttl = CredentialTtlSeconds }),
@@ -95,7 +101,7 @@ public class TurnCredentialService
             };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiToken);
 
-            var response = await client.SendAsync(request, cancellationToken);
+            using var response = await client.SendAsync(request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -103,24 +109,64 @@ public class TurnCredentialService
                 _logger.LogError(
                     "Cloudflare TURN kimlik bilgisi alınamadı ({Status}). STUN'a düşülüyor.",
                     (int)response.StatusCode);
-                return StunOnlyFallback;
+                _retryAfter = DateTimeOffset.UtcNow.AddSeconds(30);
+                return ValidCachedCredentialsOrFallback();
             }
 
-            _cachedJson = body;
+            _credentialExpiresAt = DateTimeOffset.UtcNow.AddSeconds(CredentialTtlSeconds);
+            _cachedJson = NormalizeIceServers(body, _credentialExpiresAt);
             _cachedUntil = DateTimeOffset.UtcNow.AddSeconds(CredentialTtlSeconds - CacheSafetyMarginSeconds);
             _logger.LogInformation("TURN kimlik bilgisi yenilendi, geçerlilik: {Until}", _cachedUntil);
-            return body;
+            return _cachedJson;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             // Cloudflare'e ulaşamamak sohbeti tamamen engellememeli — STUN ile
             // devam et, kullanıcıların çoğu yine de bağlanır.
             _logger.LogError(ex, "TURN kimlik bilgisi alınırken hata. STUN'a düşülüyor.");
-            return StunOnlyFallback;
+            _retryAfter = DateTimeOffset.UtcNow.AddSeconds(30);
+            return ValidCachedCredentialsOrFallback();
         }
         finally
         {
-            CacheLock.Release();
+            _cacheLock.Release();
         }
+    }
+
+    private string ValidCachedCredentialsOrFallback() =>
+        _cachedJson is not null && DateTimeOffset.UtcNow < _credentialExpiresAt.AddMinutes(-1)
+            ? _cachedJson : StunOnlyFallback;
+
+    private static string NormalizeIceServers(string body, DateTimeOffset expiresAt)
+    {
+        using var document = JsonDocument.Parse(body);
+        if (!document.RootElement.TryGetProperty("iceServers", out var input))
+            throw new JsonException("TURN yanıtında iceServers alanı eksik.");
+        var entries = input.ValueKind == JsonValueKind.Array ? input.EnumerateArray().ToArray() : [input];
+        var servers = new List<object>();
+        var relayAvailable = false;
+        foreach (var entry in entries)
+        {
+            if (!entry.TryGetProperty("urls", out var urlsElement)) continue;
+            var urls = urlsElement.ValueKind == JsonValueKind.Array
+                ? urlsElement.EnumerateArray().Where(value => value.ValueKind == JsonValueKind.String).Select(value => value.GetString()!).ToArray()
+                : urlsElement.ValueKind == JsonValueKind.String ? [urlsElement.GetString()!] : [];
+            // Browsers block port 53. Cloudflare also provides 3478 and 443.
+            urls = urls.Where(url => (url.StartsWith("stun:", StringComparison.OrdinalIgnoreCase)
+                    || url.StartsWith("turn:", StringComparison.OrdinalIgnoreCase)
+                    || url.StartsWith("turns:", StringComparison.OrdinalIgnoreCase))
+                && !System.Text.RegularExpressions.Regex.IsMatch(url, @":53(?:\?|$)")).ToArray();
+            if (urls.Length == 0) continue;
+            var username = entry.TryGetProperty("username", out var user) && user.ValueKind == JsonValueKind.String ? user.GetString() : null;
+            var credential = entry.TryGetProperty("credential", out var secret) && secret.ValueKind == JsonValueKind.String ? secret.GetString() : null;
+            var hasRelay = urls.Any(url => url.StartsWith("turn:", StringComparison.OrdinalIgnoreCase)
+                || url.StartsWith("turns:", StringComparison.OrdinalIgnoreCase));
+            if (hasRelay && (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(credential))) continue;
+            relayAvailable |= hasRelay;
+            servers.Add(new { urls, username, credential });
+        }
+        if (!relayAvailable) throw new JsonException("TURN yanıtında kullanılabilir röle bulunamadı.");
+        return JsonSerializer.Serialize(new { iceServers = servers, relayAvailable, expiresAt });
     }
 }

@@ -1,6 +1,4 @@
-/* REVO oda istemcisi — SignalR sinyalleşme + WebRTC mesh.
-   Gürültü engelleme varsayılan kapalı: tarayıcı NS (getUserMedia).
-   RNNoise dest stream sessiz/ucuz mikrofonda sesi yuttuğu için gönderilmez. */
+/* REVO: SignalR + WebRTC, local RNNoise and audio-thread voice activity. */
 
 function revoFatal(label, detail) {
     console.error(label, detail);
@@ -60,6 +58,8 @@ window.addEventListener("unhandledrejection", function (e) {
         agc: "revo_agc",
         sfx: "revo_sfx",
         ns: "revo_ns",
+        inputGain: "revo_input_gain",
+        cameraQuality: "revo_camera_quality",
     };
 
     function readStore(key, fallback) {
@@ -90,15 +90,28 @@ window.addEventListener("unhandledrejection", function (e) {
     let echoCancellation = readStore(STORE.echo, "1") !== "0";
     let autoGainControl = readStore(STORE.agc, "1") !== "0";
     let soundFxEnabled = readStore(STORE.sfx, "1") !== "0";
-    let masterVolume = Math.min(1, Math.max(0, Number(readStore(STORE.master, "1")) || 1));
-    let vadThreshold = Math.min(0.4, Math.max(0, Number(readStore(STORE.vad, "0.12")) || 0.12));
+    function storedNumber(key, fallback, min, max) {
+        const value = Number(readStore(key, String(fallback)));
+        return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+    }
+    let masterVolume = storedNumber(STORE.master, 1, 0, 1);
+    let vadThreshold = storedNumber(STORE.vad, 0.06, 0, 0.4);
+    let inputGain = storedNumber(STORE.inputGain, 1, 0, 2);
+    let cameraQuality = readStore(STORE.cameraQuality, "720");
+    if (!["360", "720", "1080"].includes(cameraQuality)) cameraQuality = "720";
 
     let localStream = null;
     let rawStream = null;
     let cleanStream = null;
-    let noiseSuppressionEnabled = readStore(STORE.ns, "0") === "1";
-    let suppressorCtx = null;
-    let rnnoiseNode = null;
+    let noiseSuppressionEnabled = readStore(STORE.ns, "1") === "1";
+    let audioPipeline = null;
+    let audioQueue = Promise.resolve();
+    let ensureAudioPromise = null;
+    let audioChanging = false;
+    let micTestAudio = null;
+    let micTestActive = false;
+    let leaving = false;
+    const audioEngine = import("/js/audio/audio-engine.js");
     let isMuted = false;
     let isDeafened = false;
     let mutedBeforeDeafen = false;
@@ -116,7 +129,6 @@ window.addEventListener("unhandledrejection", function (e) {
     let pttActive = false;
     let pttKey = readStore(STORE.ptt, "Space") || "Space";
     let vadOpen = true;
-    let vadHangoverUntil = 0;
     let selfLevel = 0;
 
     const participants = new Map();
@@ -169,7 +181,7 @@ window.addEventListener("unhandledrejection", function (e) {
 
     function setStatus(connected) {
         document.getElementById("statusDot").classList.toggle("connected", connected);
-        document.getElementById("statusText").textContent = connected ? "SİNYAL VAR" : "BAĞLANIYOR";
+        document.getElementById("statusText").textContent = connected ? "Bağlandı" : "Yeniden bağlanıyor";
     }
 
     function buildAvatar(name, avatarUrl) {
@@ -433,6 +445,7 @@ window.addEventListener("unhandledrejection", function (e) {
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (!Ctx) return;
         const ctx = new Ctx();
+        if (ctx.state === "suspended") await ctx.resume();
         try {
             if (selectedSpeakerId && typeof ctx.setSinkId === "function") {
                 await ctx.setSinkId(selectedSpeakerId);
@@ -583,6 +596,13 @@ window.addEventListener("unhandledrejection", function (e) {
                 cameraStreamId: null,
                 screenStreamId: null,
                 pendingVideos: [],
+                pendingCandidates: [],
+                makingOffer: false,
+                ignoreOffer: false,
+                settingRemoteAnswer: false,
+                needsNegotiation: false,
+                restartTimer: null,
+                restartAttempts: 0,
             };
             participants.set(connectionId, p);
         } else {
@@ -913,30 +933,23 @@ window.addEventListener("unhandledrejection", function (e) {
         markCameraSpeaking(connectionId, speaking);
     }
 
-    function noteSelfLevel(level) {
+    function noteSelfLevel(level, open = true) {
         selfLevel = level;
-        if (settingsMicMeter) {
-            settingsMicMeter.style.width = Math.min(100, Math.round(level * 140)) + "%";
+        vadOpen = open;
+        if (settingsMicMeter) settingsMicMeter.style.width = Math.min(100, Math.round(level * 140)) + "%";
+        const transmitting = !isMuted && !isDeafened && !micTestActive && (micMode !== "ptt" || pttActive);
+        if (!document.hidden) applyLevelToRow("__self__", transmitting && open ? level : 0);
+        syncTransmitIndicator();
+    }
+
+    function stopLevelMeter(connectionId) {
+        const token = levelMeterTokens.get(connectionId);
+        if (token) {
+            cancelAnimationFrame(token.frame);
+            try { token.source.disconnect(); token.analyser.disconnect(); } catch { /* detached */ }
         }
-        if (micMode !== "always" || isMuted || !localStream) return;
-        if (vadThreshold <= 0) {
-            if (!vadOpen) {
-                vadOpen = true;
-                updateEffectiveMicState();
-            }
-            return;
-        }
-        const now = performance.now();
-        if (level >= vadThreshold) {
-            vadHangoverUntil = now + 280;
-            if (!vadOpen) {
-                vadOpen = true;
-                updateEffectiveMicState();
-            }
-        } else if (vadOpen && now > vadHangoverUntil) {
-            vadOpen = false;
-            updateEffectiveMicState();
-        }
+        levelMeterTokens.delete(connectionId);
+        speakingUntil.delete(connectionId);
     }
 
     function startLevelMeter(stream, connectionId) {
@@ -947,6 +960,7 @@ window.addEventListener("unhandledrejection", function (e) {
             sharedAudioCtx.resume().catch(() => {});
         }
 
+        stopLevelMeter(connectionId);
         const token = {};
         levelMeterTokens.set(connectionId, token);
 
@@ -955,11 +969,14 @@ window.addEventListener("unhandledrejection", function (e) {
         analyser.fftSize = 1024;
         analyser.smoothingTimeConstant = 0.45;
         source.connect(analyser);
+        token.source = source;
+        token.analyser = analyser;
         const td = new Uint8Array(analyser.fftSize);
 
         (function tick() {
             if (levelMeterTokens.get(connectionId) !== token) return;
-            requestAnimationFrame(tick);
+            token.frame = requestAnimationFrame(tick);
+            if (document.hidden) return;
             if (sharedAudioCtx.state === "suspended") {
                 sharedAudioCtx.resume().catch(() => {});
             }
@@ -1035,7 +1052,27 @@ window.addEventListener("unhandledrejection", function (e) {
             startLevelMeter(remote, connectionId);
         };
 
-        pc.onconnectionstatechange = () => renderParticipantList();
+        pc.onnegotiationneeded = () => negotiatePeer(connectionId).catch((error) => console.warn("Ses bağlantısı yenilenemedi:", error));
+        pc.onsignalingstatechange = () => {
+            if (pc.signalingState === "stable" && p.needsNegotiation) {
+                negotiatePeer(connectionId).catch((error) => console.warn("Görüşme güncellenemedi:", error));
+            }
+        };
+        pc.onconnectionstatechange = () => {
+            renderParticipantList();
+            if (pc.connectionState === "connected") {
+                clearTimeout(p.restartTimer);
+                p.restartTimer = null;
+                p.restartAttempts = 0;
+            } else if (["failed", "disconnected"].includes(pc.connectionState) && !p.restartTimer) {
+                p.restartTimer = setTimeout(() => {
+                    p.restartTimer = null;
+                    if (pc.signalingState === "closed" || pc.connectionState === "connected" || p.restartAttempts >= 3) return;
+                    p.restartAttempts++;
+                    pc.restartIce();
+                }, pc.connectionState === "failed" ? 1000 : 8000);
+            }
+        };
 
         addLocalTracksTo(pc);
 
@@ -1069,7 +1106,7 @@ window.addEventListener("unhandledrejection", function (e) {
             if (!params.encodings || !params.encodings.length) {
                 params.encodings = [{}];
             }
-            params.encodings[0].maxBitrate = isScreen ? 1800000 : 800000;
+            params.encodings[0].maxBitrate = isScreen ? 2500000 : ({ "360": 500000, "720": 1500000, "1080": 3000000 }[cameraQuality]);
             sender.setParameters(params).catch(() => {});
         } catch { /* */ }
     }
@@ -1093,244 +1130,240 @@ window.addEventListener("unhandledrejection", function (e) {
         });
     }
 
-    function startSelfVad(ctx, sourceNode) {
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 1024;
-        analyser.smoothingTimeConstant = 0.45;
-        sourceNode.connect(analyser);
-        const token = {};
-        levelMeterTokens.set("__self__", token);
-        const td = new Uint8Array(analyser.fftSize);
-        (function tick() {
-            if (levelMeterTokens.get("__self__") !== token) return;
-            requestAnimationFrame(tick);
-            if (ctx.state === "suspended") {
-                ctx.resume().catch(() => {});
-            }
-            analyser.getByteTimeDomainData(td);
-            let energy = 0;
-            for (let i = 0; i < td.length; i++) {
-                const v = (td[i] - 128) / 128;
-                energy += v * v;
-            }
-            const level = Math.min(1, Math.sqrt(energy / td.length) * 5);
-            noteSelfLevel(level);
-            if (!document.hidden) applyLevelToRow("__self__", level);
-        })();
-    }
-
-    async function buildCleanStream(sourceStream) {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        suppressorCtx = new Ctx({ sampleRate: 48000 });
-        const sourceNode = suppressorCtx.createMediaStreamSource(sourceStream);
-        startSelfVad(suppressorCtx, sourceNode);
-        if (suppressorCtx.state === "suspended") {
-            await suppressorCtx.resume();
-        }
-        return null;
-    }
-
-    async function teardownNoisePipeline() {
-        levelMeterTokens.delete("__self__");
-        if (rnnoiseNode) {
-            try { rnnoiseNode.disconnect(); } catch { /* */ }
-            try { rnnoiseNode.destroy(); } catch { /* */ }
-            rnnoiseNode = null;
-        }
-        if (suppressorCtx) {
-            try { await suppressorCtx.close(); } catch { /* */ }
-            suppressorCtx = null;
-        }
-        cleanStream = null;
+    function configurePipeline() {
+        audioPipeline?.configure({ inputGain, threshold: vadThreshold, voiceActivity: micMode === "always" });
     }
 
     function audioConstraints() {
         const audio = {
-            echoCancellation,
-            autoGainControl,
-            noiseSuppression: noiseSuppressionEnabled,
+            echoCancellation, autoGainControl,
+            // RNNoise handles suppression. Browser suppression is enabled only if RNNoise fails.
+            noiseSuppression: false,
+            channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 },
         };
         if (selectedMicId) audio.deviceId = { exact: selectedMicId };
-        return { audio };
+        return { audio, video: false };
+    }
+
+    function syncTransmitIndicator() {
+        const indicator = document.getElementById("txIndicator");
+        if (!indicator) return;
+        const transmitting = localStream && !isMuted && !isDeafened && !micTestActive
+            && (micMode === "ptt" ? pttActive : vadOpen);
+        indicator.textContent = micTestActive ? "mikrofon testi" : isDeafened ? "kulaklık kapalı"
+            : isMuted ? "mikrofon kapalı" : !localStream ? "mikrofon bağlı değil"
+            : transmitting ? "ses aktarılıyor" : micMode === "ptt" ? "tuş bekleniyor" : "ses bekleniyor";
+        indicator.className = "tx-indicator" + (transmitting ? " on" : " gated");
     }
 
     function updateEffectiveMicState() {
-        if (!localStream) return;
-
-        let shouldTransmit;
-        if (isMuted) {
-            shouldTransmit = false;
-        } else if (micMode === "ptt") {
-            shouldTransmit = pttActive;
-        } else {
-            shouldTransmit = true;
+        const transmit = !isMuted && !isDeafened && !micTestActive && (micMode !== "ptt" || pttActive);
+        localStream?.getAudioTracks().forEach((track) => { track.enabled = transmit; });
+        for (const participant of participants.values()) {
+            if (!participant.pc) continue;
+            participant.pc.getSenders().forEach((sender) => {
+                if (sender?.track && sender.track.kind === "audio") {
+                    sender.track.enabled = transmit;
+                }
+            });
         }
-
-        localStream.getAudioTracks().forEach((track) => { track.enabled = shouldTransmit; });
-
-        const indicator = document.getElementById("txIndicator");
-        if (isMuted) {
-            indicator.textContent = isDeafened ? "kulaklık kapalı" : "";
-            indicator.className = "tx-indicator";
-        } else if (micMode === "always") {
-            indicator.textContent = "";
-            indicator.className = "tx-indicator";
-        } else {
-            indicator.textContent = shouldTransmit ? "aktarılıyor" : "beklemede";
-            indicator.className = "tx-indicator" + (shouldTransmit ? " on" : " gated");
-        }
+        configurePipeline();
+        syncTransmitIndicator();
     }
 
     function setMicMode(mode) {
-        micMode = mode;
-        writeStore(STORE.micMode, mode);
+        micMode = mode === "ptt" ? "ptt" : "always";
+        pttActive = false;
+        writeStore(STORE.micMode, micMode);
         document.querySelectorAll(".mode-pill").forEach((btn) => {
-            btn.classList.toggle("active", btn.dataset.mode === mode);
+            btn.classList.toggle("active", btn.dataset.mode === micMode);
+            btn.setAttribute("aria-pressed", String(btn.dataset.mode === micMode));
         });
-        if (mode === "always") vadOpen = true;
         updateEffectiveMicState();
     }
 
     function syncNsButton() {
         const btn = document.getElementById("noiseSuppressionButton");
         if (btn) {
-            btn.disabled = false;
-            btn.setAttribute("aria-pressed", String(!!noiseSuppressionEnabled));
+            btn.disabled = audioChanging;
+            btn.setAttribute("aria-pressed", String(noiseSuppressionEnabled));
             btn.setAttribute("aria-label", noiseSuppressionEnabled ? "Gürültü engellemeyi kapat" : "Gürültü engellemeyi aç");
         }
         const check = document.getElementById("noiseSuppressCheck");
-        if (check) check.checked = !!noiseSuppressionEnabled;
+        if (check) { check.checked = noiseSuppressionEnabled; check.disabled = audioChanging; }
+        const labels = { rnnoise: "RNNoise · yapay zekâ gürültü engelleme etkin", browser: "Tarayıcı gürültü engellemesi etkin", off: "Gürültü engelleme kapalı", unavailable: "Gürültü engelleme bu tarayıcıda kullanılamıyor" };
+        const status = document.getElementById("audioProcessingStatus");
+        if (status) {
+            const mode = audioPipeline?.mode || "unavailable";
+            status.textContent = audioChanging ? "Ses işleniyor…" : audioPipeline ? (labels[mode] || labels.unavailable) : "Mikrofon bekleniyor";
+            if (audioPipeline && !audioPipeline.supportsGate) status.textContent += " · Ses etkinliği filtresi desteklenmiyor";
+        }
+        const gain = document.getElementById("inputGain");
+        if (gain) gain.disabled = !!audioPipeline && !audioPipeline.supportsGain;
     }
 
     async function acquireMicStream() {
-        try {
-            return await navigator.mediaDevices.getUserMedia(audioConstraints());
-        } catch (err) {
-            if (selectedMicId) {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error("Mikrofon için HTTPS veya localhost gerekli.");
+        try { return await navigator.mediaDevices.getUserMedia(audioConstraints()); }
+        catch (err) {
+            if (selectedMicId && ["NotFoundError", "OverconstrainedError"].includes(err.name)) {
                 selectedMicId = "";
-                persistDevices();
-                return await navigator.mediaDevices.getUserMedia({
-                    audio: { echoCancellation, autoGainControl, noiseSuppression: noiseSuppressionEnabled },
-                });
+                showToast("Seçili mikrofon bulunamadı; sistem varsayılanı kullanılıyor.");
+                return navigator.mediaDevices.getUserMedia(audioConstraints());
             }
             throw err;
         }
     }
 
-    function stopDetachedSendStream() {
-        if (localStream && localStream !== rawStream && localStream !== cleanStream) {
-            localStream.getTracks().forEach((t) => {
-                try { t.stop(); } catch { /* */ }
-            });
-        }
-    }
-
-    function sendStreamFromRaw() {
-        const clones = (rawStream ? rawStream.getAudioTracks() : []).map((t) => t.clone());
-        return clones.length ? new MediaStream(clones) : rawStream;
-    }
-
     function resumeAudioGraph() {
-        if (sharedAudioCtx && sharedAudioCtx.state === "suspended") {
-            sharedAudioCtx.resume().catch(() => {});
-        }
-        if (suppressorCtx && suppressorCtx.state === "suspended") {
-            suppressorCtx.resume().catch(() => {});
-        }
+        if (sharedAudioCtx?.state === "suspended") sharedAudioCtx.resume().catch(() => {});
+        audioPipeline?.resume();
         for (const p of participants.values()) {
-            if (p.audioEl && p.audioEl.paused && p.audioEl.srcObject) {
-                const play = p.audioEl.play();
-                if (play && typeof play.catch === "function") play.catch(() => {});
-            }
+            if (p.audioEl?.paused && p.audioEl.srcObject) p.audioEl.play().catch(() => {});
         }
     }
 
-    async function wireLocalAudio(newRaw) {
-        stopDetachedSendStream();
-        if (rawStream && rawStream !== newRaw) {
-            rawStream.getTracks().forEach((t) => t.stop());
-        }
-        await teardownNoisePipeline();
-        rawStream = newRaw;
-
+    async function replaceAudioTrackEverywhere(stream) {
+        const newTrack = stream.getAudioTracks()[0];
+        const changes = [];
         try {
-            await buildCleanStream(rawStream);
-            syncNsButton();
-        } catch (err) {
-            console.error("Mikrofon ölçümü başlatılamadı:", err);
-            syncNsButton();
-            if (!suppressorCtx) {
-                const Ctx = window.AudioContext || window.webkitAudioContext;
-                suppressorCtx = new Ctx({ sampleRate: 48000 });
-                const sourceNode = suppressorCtx.createMediaStreamSource(rawStream);
-                startSelfVad(suppressorCtx, sourceNode);
-                if (suppressorCtx.state === "suspended") {
-                    suppressorCtx.resume().catch(() => {});
+            for (const p of participants.values()) {
+                if (!p.pc || p.pc.signalingState === "closed") continue;
+                const sender = p.pc.getSenders().find((s) => s.track?.kind === "audio");
+                if (sender) {
+                    const oldTrack = sender.track;
+                    await sender.replaceTrack(newTrack);
+                    changes.push({ pc: p.pc, sender, oldTrack });
+                } else {
+                    const next = p.pc.addTrack(newTrack, stream);
+                    tuneAudioSender(next);
+                    changes.push({ pc: p.pc, sender: next });
                 }
             }
-        }
-
-        localStream = sendStreamFromRaw();
-        updateEffectiveMicState();
-        return localStream;
-    }
-
-    async function replaceAudioTrackEverywhere() {
-        const newTrack = localStream && localStream.getAudioTracks()[0];
-        if (!newTrack) return;
-        let added = false;
-        for (const p of participants.values()) {
-            if (!p.pc) continue;
-            const sender = p.pc.getSenders().find((s) => s.track && s.track.kind === "audio");
-            if (sender) {
-                try { await sender.replaceTrack(newTrack); }
-                catch (err) { console.error("Ses track'i değiştirilemedi:", err); }
-            } else {
-                const next = p.pc.addTrack(newTrack, localStream);
-                tuneAudioSender(next);
-                added = true;
+        } catch (error) {
+            // A failed device change must not tear down the microphone still in use.
+            for (const change of changes) {
+                try {
+                    if (change.oldTrack) await change.sender.replaceTrack(change.oldTrack);
+                    else change.pc.removeTrack(change.sender);
+                } catch { /* disconnected peer */ }
             }
+            throw error;
         }
-        updateEffectiveMicState();
-        if (added) await renegotiateAll();
+        return changes.some((change) => !change.oldTrack);
     }
 
-    async function ensureLocalStream() {
-        if (localStream) return localStream;
-        const stream = await acquireMicStream();
-        await wireLocalAudio(stream);
-        await refreshDeviceLists();
-        return localStream;
+    function queueAudioChange(action) {
+        const result = audioQueue.then(action);
+        audioQueue = result.catch(() => {});
+        return result;
     }
 
-    async function switchAudioInput(deviceId) {
+    async function rebuildAudio(deviceId, suppression) {
+        const oldDevice = selectedMicId;
+        const oldSuppression = noiseSuppressionEnabled;
         selectedMicId = deviceId || "";
-        persistDevices();
-        const stream = await acquireMicStream();
-        await wireLocalAudio(stream);
-        await replaceAudioTrackEverywhere();
-        await refreshDeviceLists();
-    }
-
-    async function setNoiseSuppression(enabled) {
-        const next = !!enabled;
-        if (noiseSuppressionEnabled === next) {
-            syncNsButton();
-            return;
-        }
-        noiseSuppressionEnabled = next;
-        writeStore(STORE.ns, noiseSuppressionEnabled ? "1" : "0");
+        noiseSuppressionEnabled = suppression;
+        audioChanging = true;
         syncNsButton();
+        let nextRaw, nextPipeline;
         try {
-            await switchAudioInput(selectedMicId);
-        } catch (err) {
-            console.error("Gürültü engelleme değiştirilemedi:", err);
-            appendSystemMessage("Gürültü engelleme değiştirilemedi.");
-        }
+            const engine = await audioEngine;
+            nextRaw = await acquireMicStream();
+            nextPipeline = await engine.createAudioPipeline(nextRaw, {
+                noiseSuppression: suppression, inputGain, threshold: vadThreshold, voiceActivity: micMode === "always",
+                onLevel: (level, open) => { if (audioPipeline === nextPipeline) noteSelfLevel(level, open); },
+                onStatus: () => { if (audioPipeline === nextPipeline) syncNsButton(); },
+            });
+            if (leaving) throw new Error("Odadan ayrılınıyor.");
+            const renegotiate = await replaceAudioTrackEverywhere(nextPipeline.stream);
+            const oldPipeline = audioPipeline;
+            const oldRaw = rawStream;
+            stopMicTest();
+            audioPipeline = nextPipeline;
+            rawStream = nextRaw;
+            localStream = nextPipeline.stream;
+            cleanStream = nextPipeline.monitorStream;
+            updateEffectiveMicState();
+            await oldPipeline?.close();
+            oldRaw?.getTracks().forEach((track) => track.stop());
+            nextRaw.getAudioTracks()[0].addEventListener("ended", () => {
+                if (rawStream !== nextRaw || leaving) return;
+                showToast("Mikrofon bağlantısı kesildi. Varsayılan aygıt deneniyor.");
+                switchAudioInput("").catch(reportMicError);
+            });
+            persistDevices();
+            writeStore(STORE.ns, noiseSuppressionEnabled ? "1" : "0");
+            if (renegotiate) await renegotiateAll();
+            await refreshDeviceLists();
+            return localStream;
+        } catch (error) {
+            if (nextPipeline !== audioPipeline) {
+                await nextPipeline?.close();
+                nextRaw?.getTracks().forEach((track) => track.stop());
+            }
+            selectedMicId = oldDevice;
+            noiseSuppressionEnabled = oldSuppression;
+            micSelect.value = selectedMicId;
+            throw error;
+        } finally { audioChanging = false; syncNsButton(); }
     }
 
-    function toggleNoiseSuppression() {
-        return setNoiseSuppression(!noiseSuppressionEnabled);
+    function ensureLocalStream() {
+        if (localStream?.getAudioTracks().some((track) => track.readyState === "live")) return Promise.resolve(localStream);
+        if (!ensureAudioPromise) {
+            ensureAudioPromise = queueAudioChange(() => rebuildAudio(selectedMicId, noiseSuppressionEnabled))
+                .finally(() => { ensureAudioPromise = null; });
+        }
+        return ensureAudioPromise;
+    }
+
+    function switchAudioInput(deviceId) {
+        return queueAudioChange(() => rebuildAudio(deviceId, noiseSuppressionEnabled));
+    }
+
+    function setNoiseSuppression(enabled) {
+        return queueAudioChange(() => rebuildAudio(selectedMicId, !!enabled)).catch((error) => {
+            reportMicError(error);
+            syncNsButton();
+        });
+    }
+
+    function toggleNoiseSuppression() { return setNoiseSuppression(!noiseSuppressionEnabled); }
+
+    function reportMicError(error) {
+        console.error("Mikrofon ayarı uygulanamadı:", error);
+        showToast(error.name === "NotAllowedError" ? "Mikrofon izni verilmedi. Tarayıcı site izinlerini kontrol et."
+            : error.name === "NotReadableError" ? "Mikrofon başka bir uygulamada kullanılıyor olabilir."
+            : "Mikrofon ayarı uygulanamadı. Önceki ayarlar korunuyor.");
+    }
+
+    function stopMicTest() {
+        micTestActive = false;
+        if (micTestAudio) { micTestAudio.pause(); micTestAudio.srcObject = null; micTestAudio = null; }
+        const button = document.getElementById("micTestButton");
+        if (button) { button.textContent = "Mikrofonu test et"; button.setAttribute("aria-pressed", "false"); }
+        const status = document.getElementById("micTestStatus");
+        if (status) status.textContent = "Kulaklık kullanarak işlenmiş sesini dinle. Test sırasında odadakilere ses gönderilmez.";
+        updateEffectiveMicState();
+    }
+
+    async function toggleMicTest() {
+        if (micTestActive) { stopMicTest(); return; }
+        try {
+            await ensureLocalStream();
+            micTestActive = true;
+            updateEffectiveMicState();
+            micTestAudio = new Audio();
+            micTestAudio.srcObject = audioPipeline.monitorStream;
+            micTestAudio.volume = masterVolume;
+            if (supportsSinkId) await micTestAudio.setSinkId(selectedSpeakerId || "");
+            await micTestAudio.play();
+            const button = document.getElementById("micTestButton");
+            if (button) { button.textContent = "Testi durdur"; button.setAttribute("aria-pressed", "true"); }
+            const status = document.getElementById("micTestStatus");
+            if (status) status.textContent = "Kendi işlenmiş sesini duyuyorsun. Odaya ses gönderilmiyor.";
+        } catch (error) { stopMicTest(); reportMicError(error); }
     }
 
     function fillSelect(select, devices, selected, fallbackLabel) {
@@ -1366,7 +1399,7 @@ window.addEventListener("unhandledrejection", function (e) {
         fillSelect(speakerSelect, devices.filter((d) => d.kind === "audiooutput"), selectedSpeakerId, "Sistem varsayılanı");
         fillSelect(camSelect, devices.filter((d) => d.kind === "videoinput"), selectedCamId, "Sistem varsayılanı");
         speakerSelect.disabled = !supportsSinkId;
-        document.getElementById("testSpeakerBtn").disabled = !supportsSinkId;
+        document.getElementById("testSpeakerBtn").disabled = false;
         if (!supportsSinkId) {
             speakerSelect.title = "Bu tarayıcı hoparlör seçimini desteklemiyor";
         }
@@ -1421,14 +1454,16 @@ window.addEventListener("unhandledrejection", function (e) {
         }
         ensureNsSettingsRow();
         bindNsCheck(document.getElementById("noiseSuppressCheck"));
+        syncSettingValues();
         try { await ensureLocalStream(); } catch { /* izin yoksa liste boş kalır */ }
         await refreshDeviceLists();
-        await startCameraPreview();
+        if (isCameraOn) await startCameraPreview();
         setTimeout(() => { try { micSelect.focus(); } catch { /* */ } }, 40);
     }
 
     async function closeSettings() {
         setOverlayOpen(settingsOverlay, false);
+        stopMicTest();
         await stopCameraPreview();
         const back = settingsFocusReturn;
         settingsFocusReturn = null;
@@ -1439,9 +1474,9 @@ window.addEventListener("unhandledrejection", function (e) {
 
     function videoConstraints(idealWidth, idealHeight) {
         const video = {
-            width: { ideal: idealWidth },
-            height: { ideal: idealHeight },
-            frameRate: { ideal: 60 },
+            width: { ideal: Math.round(Number(cameraQuality) * 16 / 9) },
+            height: { ideal: Number(cameraQuality) },
+            frameRate: { ideal: 30, max: 30 },
         };
         if (selectedCamId) video.deviceId = { exact: selectedCamId };
         return { video, audio: false };
@@ -1451,29 +1486,41 @@ window.addEventListener("unhandledrejection", function (e) {
         try {
             return await navigator.mediaDevices.getUserMedia(videoConstraints(1280, 720));
         } catch (err) {
-            if (selectedCamId) {
+            if (selectedCamId && ["NotFoundError", "OverconstrainedError"].includes(err.name)) {
                 selectedCamId = "";
                 persistDevices();
-                return await navigator.mediaDevices.getUserMedia({
-                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } },
-                    audio: false,
-                });
+                return await navigator.mediaDevices.getUserMedia(videoConstraints());
             }
             throw err;
         }
     }
 
+    async function negotiatePeer(connectionId) {
+        const p = participants.get(connectionId);
+        const pc = p?.pc;
+        if (!pc || pc.signalingState === "closed" || connection.state !== signalR.HubConnectionState.Connected) return;
+        if (p.makingOffer || pc.signalingState !== "stable") { p.needsNegotiation = true; return; }
+        p.needsNegotiation = false;
+        p.makingOffer = true;
+        try {
+            const offer = await pc.createOffer();
+            // A polite peer may have received an offer while createOffer was pending.
+            if (pc.signalingState !== "stable") return;
+            offer.sdp = tuneOpusSdp(offer.sdp);
+            await pc.setLocalDescription(offer);
+            await connection.invoke("SendOffer", connectionId, JSON.stringify(pc.localDescription));
+        } finally { p.makingOffer = false; }
+    }
+
     async function renegotiateAll() {
-        for (const [connectionId, p] of participants.entries()) {
-            if (!p.pc) continue;
-            try {
-                const offer = await p.pc.createOffer();
-                offer.sdp = tuneOpusSdp(offer.sdp);
-                await p.pc.setLocalDescription(offer);
-                await connection.invoke("SendOffer", connectionId, JSON.stringify(offer));
-            } catch (err) {
-                console.error(`Yeniden pazarlık hatası (${connectionId}):`, err);
-            }
+        await Promise.allSettled([...participants.keys()].map((id) => negotiatePeer(id)));
+    }
+
+    async function flushCandidates(p) {
+        const candidates = p.pendingCandidates.splice(0);
+        for (const candidate of candidates) {
+            try { await p.pc.addIceCandidate(candidate); }
+            catch (error) { if (!p.ignoreOffer) console.warn("ICE adayı uygulanamadı:", error); }
         }
     }
 
@@ -1524,8 +1571,8 @@ window.addEventListener("unhandledrejection", function (e) {
         btn.setAttribute("aria-label", "Kamerayı aç");
         syncSelfState();
         renderParticipantList();
-        if (!settingsOverlay.hidden) await startCameraPreview();
-        else syncPreviewWrap();
+        settingsCamPreview.srcObject = null;
+        syncPreviewWrap();
     }
 
     async function toggleCamera() {
@@ -1553,7 +1600,7 @@ window.addEventListener("unhandledrejection", function (e) {
                 if (!p.pc) continue;
                 const sender = p.pc.getSenders().find((s) => s.track === oldTrack);
                 if (sender) {
-                    try { await sender.replaceTrack(newTrack); }
+                    try { await sender.replaceTrack(newTrack); tuneVideoSender(sender, false); }
                     catch (err) { console.error("Kamera track'i değiştirilemedi:", err); }
                 }
             }
@@ -1563,7 +1610,7 @@ window.addEventListener("unhandledrejection", function (e) {
             settingsCamPreview.srcObject = cameraStream;
             syncPreviewWrap();
             await connection.invoke("AnnounceMedia", "camera", cameraStream.id).catch(() => {});
-        } else if (!settingsOverlay.hidden) {
+        } else if (!settingsOverlay.hidden && cameraPreviewStream) {
             await startCameraPreview();
         }
         await refreshDeviceLists();
@@ -1738,23 +1785,21 @@ window.addEventListener("unhandledrejection", function (e) {
     }
 
     async function callUser(connectionId) {
-        const pc = createPeerConnectionFor(connectionId);
-        const offer = await pc.createOffer();
-        offer.sdp = tuneOpusSdp(offer.sdp);
-        await pc.setLocalDescription(offer);
-        await connection.invoke("SendOffer", connectionId, JSON.stringify(offer));
+        createPeerConnectionFor(connectionId);
+        await negotiatePeer(connectionId);
     }
 
     function teardownParticipant(connectionId) {
         const p = participants.get(connectionId);
         if (!p) return;
+        clearTimeout(p.restartTimer);
         if (p.pc) {
             hideRemoteScreenShareIfFrom(connectionId);
             p.pc.close();
         }
-        if (p.audioEl) p.audioEl.remove();
+        if (p.audioEl) { p.audioEl.pause(); p.audioEl.srcObject = null; p.audioEl.remove(); }
         removeCameraTile(connectionId);
-        levelMeterTokens.delete(connectionId);
+        stopLevelMeter(connectionId);
         meterRows.delete(connectionId);
         typingUntil.delete(connectionId);
         participants.delete(connectionId);
@@ -1784,11 +1829,9 @@ window.addEventListener("unhandledrejection", function (e) {
     }
 
     async function setMuted(next, fromDeafen) {
-        try {
-            await ensureLocalStream();
-        } catch {
-            appendSystemMessage("Mikrofona erişim izni vermelisin.");
-            return;
+        if (!next) {
+            try { await ensureLocalStream(); }
+            catch (error) { reportMicError(error); return; }
         }
         isMuted = next;
         updateEffectiveMicState();
@@ -1844,7 +1887,8 @@ window.addEventListener("unhandledrejection", function (e) {
             p.screen = !!u.screen;
             p.cameraStreamId = u.cameraStreamId || null;
             p.screenStreamId = u.screenStreamId || null;
-            await callUser(u.connectionId);
+            try { await callUser(u.connectionId); }
+            catch (error) { console.warn("Katılımcıya bağlanılamadı:", error); }
         }
         renderParticipantList();
     });
@@ -1858,34 +1902,52 @@ window.addEventListener("unhandledrejection", function (e) {
 
     connection.on("ReceiveOffer", async (senderConnectionId, offerStr) => {
         try {
-            await ensureLocalStream();
-        } catch (err) {
-            console.error("Mikrofon erişim hatası:", err);
-            appendSystemMessage("Odaya sesli katılmak için mikrofon erişimine izin vermelisin.");
-        }
-        const offer = JSON.parse(offerStr);
-        const pc = createPeerConnectionFor(senderConnectionId);
-        await pc.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await pc.createAnswer();
-        answer.sdp = tuneOpusSdp(answer.sdp);
-        await pc.setLocalDescription(answer);
-        await connection.invoke("SendAnswer", senderConnectionId, JSON.stringify(answer));
+            try { await ensureLocalStream(); } catch (error) { reportMicError(error); }
+            const offer = JSON.parse(offerStr);
+            const pc = createPeerConnectionFor(senderConnectionId);
+            const p = participants.get(senderConnectionId);
+            const ready = !p.makingOffer && (pc.signalingState === "stable" || p.settingRemoteAnswer);
+            const collision = !ready;
+            const polite = String(connection.connectionId).localeCompare(senderConnectionId) > 0;
+            p.ignoreOffer = !polite && collision;
+            if (p.ignoreOffer) { p.pendingCandidates.length = 0; return; }
+            await pc.setRemoteDescription(offer);
+            await flushCandidates(p);
+            const answer = await pc.createAnswer();
+            answer.sdp = tuneOpusSdp(answer.sdp);
+            await pc.setLocalDescription(answer);
+            await connection.invoke("SendAnswer", senderConnectionId, JSON.stringify(pc.localDescription));
+        } catch (error) { console.warn("Gelen bağlantı teklifi işlenemedi:", error); }
     });
 
     connection.on("ReceiveAnswer", async (senderConnectionId, answerStr) => {
         const p = participants.get(senderConnectionId);
-        if (!p || !p.pc) return;
-        await p.pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(answerStr)));
+        if (!p?.pc || p.pc.signalingState !== "have-local-offer") return;
+        try {
+            p.settingRemoteAnswer = true;
+            await p.pc.setRemoteDescription(JSON.parse(answerStr));
+            p.ignoreOffer = false;
+            await flushCandidates(p);
+        } catch (error) { console.warn("Bağlantı yanıtı işlenemedi:", error); }
+        finally { p.settingRemoteAnswer = false; }
     });
 
     connection.on("ReceiveICECandidate", async (senderConnectionId, candidateStr) => {
-        const p = participants.get(senderConnectionId);
-        if (!p || !p.pc) return;
+        const p = getOrCreateParticipant(senderConnectionId);
+        if (p.ignoreOffer) return;
         try {
-            await p.pc.addIceCandidate(new RTCIceCandidate(JSON.parse(candidateStr)));
-        } catch (e) {
-            console.error("ICE ekleme hatası:", e);
-        }
+            const candidate = JSON.parse(candidateStr);
+            if (!p.pc?.remoteDescription) {
+                if (p.pendingCandidates.length < 128) p.pendingCandidates.push(candidate);
+                return;
+            }
+            await p.pc.addIceCandidate(candidate);
+        } catch (error) { if (!p.ignoreOffer) console.warn("ICE ekleme hatası:", error); }
+    });
+
+    connection.on("ModeratorChanged", (connectionId) => {
+        isModerator = connectionId === connection.connectionId;
+        renderParticipantList();
     });
 
     connection.on("UserMuteChanged", (connectionId, muted) => {
@@ -1979,8 +2041,12 @@ window.addEventListener("unhandledrejection", function (e) {
         const input = document.getElementById("messageInput");
         const message = input.value.trim();
         if (!message) return;
-        connection.invoke("SendMessage", message).catch((err) => console.error("Mesaj gönderim hatası:", err));
-        input.value = "";
+        if (connection.state !== signalR.HubConnectionState.Connected) { showToast("Bağlantı kurulana kadar mesajın korunuyor."); return; }
+        const button = document.getElementById("sendButton");
+        if (button) button.disabled = true;
+        connection.invoke("SendMessage", message).then(() => {
+            if (input.value.trim() === message) input.value = "";
+        }).catch(() => showToast("Mesaj gönderilemedi. Tekrar dene.")).finally(() => { if (button) button.disabled = false; });
     });
 
     document.getElementById("messageInput").addEventListener("input", () => {
@@ -2028,10 +2094,20 @@ window.addEventListener("unhandledrejection", function (e) {
         });
     });
 
-    speakerSelect.addEventListener("change", () => {
+    speakerSelect.addEventListener("change", async () => {
+        const previous = selectedSpeakerId;
         selectedSpeakerId = speakerSelect.value || "";
-        persistDevices();
-        applyAllOutputs();
+        const elements = [...participants.values()].map((p) => p.audioEl).filter(Boolean);
+        if (micTestAudio) elements.push(micTestAudio);
+        try {
+            await Promise.all(elements.map((el) => el.setSinkId(selectedSpeakerId)));
+            persistDevices();
+        } catch (error) {
+            selectedSpeakerId = previous;
+            speakerSelect.value = previous;
+            applyAllOutputs();
+            showToast("Ses çıkışı değiştirilemedi. Aygıt iznini kontrol et.");
+        }
     });
 
     camSelect.addEventListener("change", () => {
@@ -2049,21 +2125,61 @@ window.addEventListener("unhandledrejection", function (e) {
         masterVolume = Number(masterVolumeSlider.value) / 100;
         writeStore(STORE.master, String(masterVolume));
         applyAllGains();
+        if (micTestAudio) micTestAudio.volume = masterVolume;
+        syncSettingValues();
     });
 
     vadSlider.addEventListener("input", () => {
         vadThreshold = Number(vadSlider.value) / 100;
         writeStore(STORE.vad, String(vadThreshold));
-        if (vadThreshold <= 0) {
-            vadOpen = true;
-            updateEffectiveMicState();
-        }
+        configurePipeline();
+        syncSettingValues();
     });
 
+    function syncSettingValues() {
+        const values = { masterVolumeValue: Math.round(masterVolume * 100) + "%", inputGainValue: Math.round(inputGain * 100) + "%", vadThresholdValue: vadThreshold === 0 ? "Filtre kapalı" : Math.round(vadThreshold * 100) + "%" };
+        for (const [id, value] of Object.entries(values)) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        }
+    }
+
+    document.getElementById("inputGain")?.addEventListener("input", (event) => {
+        inputGain = Math.max(0, Math.min(2, Number(event.target.value) / 100));
+        writeStore(STORE.inputGain, String(inputGain));
+        configurePipeline();
+        syncSettingValues();
+    });
+    document.getElementById("micTestButton")?.addEventListener("click", toggleMicTest);
+    document.getElementById("cameraPreviewButton")?.addEventListener("click", async (event) => {
+        if (cameraPreviewStream) { await stopCameraPreview(); event.target.textContent = "Önizlemeyi aç"; }
+        else { await startCameraPreview(); event.target.textContent = cameraPreviewStream ? "Önizlemeyi kapat" : "Önizlemeyi aç"; }
+    });
+    document.getElementById("cameraQualitySelect")?.addEventListener("change", async (event) => {
+        const previous = cameraQuality;
+        cameraQuality = event.target.value;
+        try { await switchCameraDevice(selectedCamId); writeStore(STORE.cameraQuality, cameraQuality); }
+        catch (error) { cameraQuality = previous; event.target.value = previous; showToast("Kamera kalitesi değiştirilemedi."); }
+    });
+
+    async function changeCaptureSetting(kind, value) {
+        return queueAudioChange(async () => {
+            const previous = kind === "echo" ? echoCancellation : autoGainControl;
+            if (kind === "echo") echoCancellation = value; else autoGainControl = value;
+            try {
+                await rebuildAudio(selectedMicId, noiseSuppressionEnabled);
+                writeStore(kind === "echo" ? STORE.echo : STORE.agc, value ? "1" : "0");
+            } catch (error) {
+                if (kind === "echo") echoCancellation = previous; else autoGainControl = previous;
+                echoCancelCheck.checked = echoCancellation;
+                autoGainCheck.checked = autoGainControl;
+                reportMicError(error);
+            }
+        });
+    }
+
     echoCancelCheck.addEventListener("change", () => {
-        echoCancellation = echoCancelCheck.checked;
-        writeStore(STORE.echo, echoCancellation ? "1" : "0");
-        switchAudioInput(selectedMicId).catch((err) => console.error(err));
+        changeCaptureSetting("echo", echoCancelCheck.checked);
     });
 
     function ensureNsSettingsRow() {
@@ -2081,7 +2197,7 @@ window.addEventListener("unhandledrejection", function (e) {
         const hint = document.createElement("p");
         hint.className = "hint";
         hint.id = "noiseSuppressHint";
-        hint.textContent = "Sessiz veya ucuz mikrofonlarda sesi yutabilir. Kapalı bırakmak genelde daha net konuşma verir.";
+        hint.textContent = "RNNoise arka plan gürültüsünü cihazında azaltır. Kullanılamazsa tarayıcı filtresine geçilir.";
         host.insertBefore(label, autoGainCheck.parentElement);
         host.insertBefore(hint, autoGainCheck.parentElement);
         bindNsCheck(input);
@@ -2097,9 +2213,7 @@ window.addEventListener("unhandledrejection", function (e) {
     bindNsCheck(noiseSuppressCheck);
 
     autoGainCheck.addEventListener("change", () => {
-        autoGainControl = autoGainCheck.checked;
-        writeStore(STORE.agc, autoGainControl ? "1" : "0");
-        switchAudioInput(selectedMicId).catch((err) => console.error(err));
+        changeCaptureSetting("agc", autoGainCheck.checked);
     });
 
     soundFxCheck.addEventListener("change", () => {
@@ -2108,8 +2222,17 @@ window.addEventListener("unhandledrejection", function (e) {
     });
 
     if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
-        navigator.mediaDevices.addEventListener("devicechange", () => {
-            refreshDeviceLists().catch(() => {});
+        navigator.mediaDevices.addEventListener("devicechange", async () => {
+            await refreshDeviceLists();
+            if (selectedMicId && ![...micSelect.options].some((option) => option.value === selectedMicId)) {
+                switchAudioInput("").catch(reportMicError);
+            }
+            if (selectedSpeakerId && ![...speakerSelect.options].some((option) => option.value === selectedSpeakerId)) {
+                selectedSpeakerId = "";
+                persistDevices();
+                applyAllOutputs();
+                showToast("Ses çıkışı sistem varsayılanına geçirildi.");
+            }
         });
     }
 
@@ -2230,59 +2353,104 @@ window.addEventListener("unhandledrejection", function (e) {
 
     setInterval(renderTyping, 800);
 
-    window.addEventListener("beforeunload", () => {
-        if (rawStream) rawStream.getTracks().forEach((track) => track.stop());
-        if (cleanStream) cleanStream.getTracks().forEach((track) => track.stop());
-        if (cameraStream) cameraStream.getTracks().forEach((track) => track.stop());
-        if (cameraPreviewStream && cameraPreviewStream !== cameraStream) {
-            cameraPreviewStream.getTracks().forEach((track) => track.stop());
-        }
-        if (rnnoiseNode) {
-            try { rnnoiseNode.destroy(); } catch { /* */ }
-        }
-        if (suppressorCtx) suppressorCtx.close();
-        if (screenStream) screenStream.getTracks().forEach((track) => track.stop());
-        participants.forEach((p) => p.pc && p.pc.close());
-    });
+    let reconnectTimer = null;
+    let reconnectAttempt = 0;
+    let startingConnection = false;
 
-    Promise.all([connection.start(), iceServersReady])
-        .then(() => {
-            setStatus(true);
-            return connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword, currentAvatarUrl);
-        })
-        .then(async () => {
-            renderParticipantList();
-            try { await ensureLocalStream(); }
-            catch { appendSystemMessage("Odaya sesli katılmak için mikrofon erişimine izin vermelisin."); }
-            return announceLocalMedia();
-        })
-        .catch((err) => {
-            console.error("SignalR bağlantı hatası:", err);
+    function releaseMedia() {
+        if (leaving) return;
+        leaving = true;
+        clearTimeout(reconnectTimer);
+        stopMicTest();
+        audioPipeline?.close();
+        rawStream?.getTracks().forEach((track) => track.stop());
+        cameraStream?.getTracks().forEach((track) => track.stop());
+        cameraPreviewStream?.getTracks().forEach((track) => track.stop());
+        screenStream?.getTracks().forEach((track) => track.stop());
+        for (const id of [...participants.keys()]) teardownParticipant(id);
+        sharedAudioCtx?.close().catch(() => {});
+        connection.stop().catch(() => {});
+    }
+    window.addEventListener("pagehide", releaseMedia);
+    window.addEventListener("beforeunload", releaseMedia);
+
+    async function joinCurrentRoom() {
+        await connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword, currentAvatarUrl);
+        setStatus(true);
+        reconnectAttempt = 0;
+        renderParticipantList();
+        try { await ensureLocalStream(); }
+        catch (error) { reportMicError(error); appendSystemMessage("Dinleyici olarak katıldın. Mikrofon iznini ayarlardan verebilirsin."); }
+        await announceLocalMedia();
+    }
+
+    function scheduleReconnect() {
+        if (leaving || reconnectTimer) return;
+        const delay = Math.min(30000, 1000 * Math.pow(2, Math.min(reconnectAttempt++, 5)));
+        reconnectTimer = setTimeout(() => { reconnectTimer = null; startConnection(); }, delay);
+    }
+
+    async function startConnection() {
+        if (leaving || startingConnection || connection.state !== signalR.HubConnectionState.Disconnected) return;
+        startingConnection = true;
+        try {
+            await iceServersReady;
+            await connection.start();
+            await joinCurrentRoom();
+        } catch (error) {
+            console.warn("Bağlantı kurulamadı; yeniden denenecek:", error);
             setStatus(false);
-            appendSystemMessage("Bağlantı kurulamadı, sayfayı yenilemeyi dene.");
-        });
+            if (connection.state !== signalR.HubConnectionState.Disconnected) await connection.stop().catch(() => {});
+            scheduleReconnect();
+        } finally { startingConnection = false; }
+    }
 
     connection.onreconnecting(() => setStatus(false));
-
     connection.onreconnected(async () => {
-        setStatus(true);
-        participants.forEach((p, id) => teardownParticipant(id));
-        try {
-            await connection.invoke("JoinRoom", currentRoomCode, currentUsername, currentRoomPassword, currentAvatarUrl);
-            renderParticipantList();
-            try { await ensureLocalStream(); }
-            catch { appendSystemMessage("Odaya sesli katılmak için mikrofon erişimine izin vermelisin."); }
-            await announceLocalMedia();
-        } catch (err) {
-            console.error("Yeniden katılım hatası:", err);
-        }
+        for (const id of [...participants.keys()]) teardownParticipant(id);
+        try { await joinCurrentRoom(); }
+        catch (error) { setStatus(false); await connection.stop(); scheduleReconnect(); }
     });
+    connection.onclose(() => { setStatus(false); scheduleReconnect(); });
+    window.addEventListener("online", () => {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+        startConnection();
+    });
+    startConnection();
+
+    async function refreshConnectionStats() {
+        const quality = document.getElementById("connectionQuality");
+        const latency = document.getElementById("connectionLatency");
+        if ((!quality && !latency) || document.hidden || leaving) return;
+        let roundTrip = 0, lost = 0, received = 0, peers = 0;
+        for (const p of participants.values()) {
+            if (p.pc?.connectionState !== "connected") continue;
+            peers++;
+            try {
+                const stats = await p.pc.getStats();
+                stats.forEach((stat) => {
+                    if (stat.type === "candidate-pair" && stat.state === "succeeded" && stat.nominated) roundTrip = Math.max(roundTrip, stat.currentRoundTripTime || 0);
+                    if (stat.type === "inbound-rtp" && stat.kind === "audio") { lost += Math.max(0, stat.packetsLost || 0); received += stat.packetsReceived || 0; }
+                });
+            } catch { /* peer left during poll */ }
+        }
+        const ratio = lost / Math.max(1, received + lost);
+        if (latency) latency.textContent = peers ? Math.round(roundTrip * 1000) + " ms" : "—";
+        if (quality) quality.textContent = !peers ? "Görüşme bekleniyor" : ratio > 0.08 || roundTrip > 0.5 ? "Bağlantı zayıf" : ratio > 0.02 || roundTrip > 0.2 ? "Bağlantı orta" : "Bağlantı iyi";
+    }
+    setInterval(refreshConnectionStats, 5000);
 
     masterVolumeSlider.value = String(Math.round(masterVolume * 100));
     vadSlider.value = String(Math.round(vadThreshold * 100));
     echoCancelCheck.checked = echoCancellation;
     autoGainCheck.checked = autoGainControl;
     soundFxCheck.checked = soundFxEnabled;
+    const inputGainSlider = document.getElementById("inputGain");
+    if (inputGainSlider) inputGainSlider.value = String(Math.round(inputGain * 100));
+    const qualitySelect = document.getElementById("cameraQualitySelect");
+    if (qualitySelect) qualitySelect.value = cameraQuality;
+    syncSettingValues();
 
     settingsCamPreview.addEventListener("playing", syncPreviewWrap);
     settingsCamPreview.addEventListener("emptied", syncPreviewWrap);

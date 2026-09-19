@@ -22,6 +22,7 @@ var simd = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 
 // src/utils/fetchArrayBuffer.ts
 var fetchArrayBuffer = async (url, init) => {
   const res = await fetch(url, init);
+  if (!res.ok) throw new Error(`Ses modeli y?klenemedi: HTTP ${res.status}`);
   const result = await res.arrayBuffer();
   return result;
 };
@@ -29,8 +30,11 @@ var fetchArrayBuffer = async (url, init) => {
 // src/rnnoise/load.ts
 var loadRnnoise = async ({ url, simdUrl }, init) => {
   const loadUrl = await simd() ? simdUrl : url;
-  const binary = await fetchArrayBuffer(loadUrl, init);
-  return binary;
+  try { return await fetchArrayBuffer(loadUrl, init); }
+  catch (error) {
+    if (loadUrl === url) throw error;
+    return await fetchArrayBuffer(url, init);
+  }
 };
 
 // src/rnnoise/workletUtil.ts

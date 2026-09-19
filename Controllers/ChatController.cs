@@ -30,7 +30,8 @@ public class ChatController : Controller
     // Buradaki kontrol sadece kullanıcıya erken, sayfa yenilemeden geri bildirim
     // vermek için — asıl güvenlik sınırı Hub'da.
     [HttpPost]
-    public IActionResult CreateRoom(string username, string? password)
+    [ValidateAntiForgeryToken]
+    public IActionResult CreateRoom(string? username, string? password)
     {
         username = NormalizeUsername(username);
         if (username is null)
@@ -47,18 +48,35 @@ public class ChatController : Controller
         // orada odayı YENİ oluşturan kullanıcı otomatik moderatör kabul edilmez,
         // bunun yerine CreateRoom burada odayı yaratıp CreatedByConnectionId'yi
         // boş bırakır, Hub ilk katılan kişiyi (ki bu kurucudur) moderatör atar.
-        var room = _roomManager.CreateRoom(creatorConnectionId: "", password);
+        if (password?.Length > RoomInput.MaximumPasswordLength)
+        {
+            ModelState.AddModelError("", "Oda şifresi en fazla 128 karakter olabilir.");
+            ViewBag.LobbyMode = "create";
+            SetPublicCount();
+            return View("Login");
+        }
+        Models.Room room;
+        try { room = _roomManager.CreateRoom(creatorConnectionId: "", password); }
+        catch (InvalidOperationException exception)
+        {
+            ModelState.AddModelError("", exception.Message);
+            ViewBag.LobbyMode = "create";
+            SetPublicCount();
+            return View("Login");
+        }
 
         // Şifreyi URL'e koymadan Index'e taşımak için TempData kullanılıyor —
         // tek bir redirect boyunca yaşar, Index içinde okunur okunmaz silinir.
         // Index sayfası bunu SignalR'ın JoinRoom çağrısına gömecek (bkz. Index.cshtml).
         TempData["RoomPassword"] = password;
+        TempData["RoomPasswordCode"] = room.Code;
 
         return RedirectToAction("Index", new { username, room = room.Code });
     }
 
     [HttpPost]
-    public IActionResult JoinRoom(string username, string roomCode, string? password)
+    [ValidateAntiForgeryToken]
+    public IActionResult JoinRoom(string? username, string roomCode, string? password)
     {
         username = NormalizeUsername(username);
         if (username is null)
@@ -91,6 +109,7 @@ public class ChatController : Controller
         }
 
         TempData["RoomPassword"] = password;
+        TempData["RoomPasswordCode"] = room.Code;
 
         return RedirectToAction("Index", new { username, room = room.Code });
     }
@@ -117,20 +136,16 @@ public class ChatController : Controller
         // TempData bir kez okunduğunda otomatik temizlenir — sayfa yenilendiğinde
         // (F5) burası null gelir, bu durumu Index.cshtml tarafında "JoinError" ile
         // ele alıp kullanıcıyı Login'e (kod önceden dolu) geri yönlendiriyoruz.
-        ViewBag.RoomPassword = TempData["RoomPassword"] as string;
+        // Keep the last room credential in the encrypted, HttpOnly TempData
+        // cookie so refresh works. Never reuse it for a different room.
+        ViewBag.RoomPassword = TempData.Peek("RoomPasswordCode") as string == found.Code
+            ? TempData.Peek("RoomPassword") as string : null;
         return View();
     }
 
     private static string? NormalizeUsername(string? username)
     {
-        username = username?.Trim();
-        if (string.IsNullOrWhiteSpace(username)) return null;
-
-        // Nick'i arayüzü bozmayacak makul bir uzunlukta tut.
-        if (username.Length > 24)
-            username = username.Substring(0, 24);
-
-        return username;
+        return RoomInput.NormalizeUsername(username);
     }
 
     private void SetPublicCount()

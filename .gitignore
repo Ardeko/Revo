@@ -52,3 +52,8 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Browser tooling and verification output
+node_modules/
+test-results/
+playwright-report/

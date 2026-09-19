@@ -10,19 +10,11 @@
     <title>REVO — Oda</title>
     <link rel="icon" type="image/png" href="~/favicon.ico" />
     <link rel="stylesheet" href="~/css/revo-fonts.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/cursor.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/titlebar.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/revo-room.css" asp-append-version="true" />
 </head>
 <body class="room-app">
-    <div class="room-atmosphere" aria-hidden="true">
-        <video class="room-atmosphere__video" id="roomAtmosphereVideo"
-               autoplay muted loop playsinline preload="metadata"
-               poster="~/media/echoid-poster.png">
-            <source src="~/media/echoid-hero.mp4" type="video/mp4" />
-        </video>
-        <div class="room-atmosphere__scrim"></div>
-    </div>
+    <div class="ambient-background" aria-hidden="true"></div>
     <div class="revo-titlebar">
         <div class="revo-titlebar__drag">
             <span class="revo-titlebar__logo" aria-hidden="true"></span>
@@ -47,18 +39,18 @@
     <div class="app">
         <header class="topbar">
             <div class="topbar__brand">
-                <a class="wordmark" href="/Chat/Login">REVO</a>
+                <a class="wordmark" href="/Chat/Rooms" aria-label="REVO odalarına dön"><span class="brand-symbol" aria-hidden="true">r</span> revo<span class="wordmark__dot">.</span></a>
                 <span class="topbar__rule" aria-hidden="true"></span>
-                <h1 class="channel__name" id="roomDisplayName">@((string)(ViewBag.RoomName ?? ViewBag.RoomCode ?? "Oda"))</h1>
+                <div class="channel"><span class="eyebrow">SES ODASI</span><h1 class="channel__name" id="roomDisplayName">@((string)(ViewBag.RoomName ?? ViewBag.RoomCode ?? "Oda"))</h1></div>
                 <button type="button" class="room-code-badge" id="roomCodeBadge" title="Davet linkini kopyala">
                     <span class="code" id="roomCodeText">@ViewBag.RoomCode</span>
-                    <span class="copy-icon">Kopyala</span>
+                    <span class="copy-icon">Davet et ↗</span>
                 </button>
             </div>
             <div class="topbar__meta">
                 <div class="status">
                     <span class="status-dot-wrap"><span class="status-dot" id="statusDot"></span></span>
-                    <span id="statusText">BAĞLANIYOR</span>
+                    <span id="statusText" role="status">BAĞLANIYOR</span>
                 </div>
                 <div class="count" id="participantCount">1 kişi</div>
             </div>
@@ -91,27 +83,31 @@
 
             <div class="room-side" id="roomSide">
                 <section class="panel participants-panel" id="salon">
+                    <a class="sidebar-back" href="/Chat/Rooms">← Tüm odalar</a>
+                    <div class="voice-channel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg><div><strong>Birlikte, aynı odada.</strong><span>Sesli sohbet</span></div><span class="voice-channel__dot" aria-hidden="true"></span></div>
                     <div class="salon__head">
-                        <h2 class="panel-title">Ses</h2>
+                        <h2 class="panel-title">Odada kimler var</h2>
                         <p class="salon__tagline" id="salonTagline">1 kişi</p>
                     </div>
                     <ul class="participant-list" id="participantList"></ul>
                     <div class="salon-invite" id="salonInvite" hidden>
-                        <button type="button" class="salon-invite__btn" id="salonInviteCopy">Daveti kopyala</button>
+                        <p>Güzel sohbet, bir davetle başlar.</p><button type="button" class="salon-invite__btn" id="salonInviteCopy">+ Arkadaşlarını davet et</button>
                     </div>
+                    <div class="voice-art" aria-hidden="true"><div class="voice-art__orbit"></div><div class="voice-art__wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span>İyi ki aynı frekanstayız.</span></div>
                 </section>
 
                 <section class="panel chat-panel">
-                    <h2 class="panel-title">Sohbet</h2>
-                    <div class="messages" id="messagesList">
-                        <div class="chat-empty" id="chatEmpty">Frekans açık. İlk cümleyi sen kur.</div>
+                    <div class="chat-heading"><h2 class="panel-title"><span aria-hidden="true">#</span> oda-sohbeti</h2><span class="chat-heading__hint">Konuşmanın devamı burada.</span></div>
+                    <div class="messages" id="messagesList" role="log" aria-label="Oda mesajları" aria-live="polite" aria-relevant="additions">
+                        <div class="chat-empty" id="chatEmpty"><span class="chat-empty__icon" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2"><path d="M31 25a13 13 0 1 0-23 2l-1 7 8-2a13 13 0 0 0 16-7Z"/><path d="M13 17h13M13 23h8"/></svg></span><span class="eyebrow">BURASI SİZİN ALANINIZ</span><h3>Sohbet burada başlıyor.</h3><p>Bir selam ver, bir fikir paylaş.<br />Gerisi zaten gelir.</p></div>
                     </div>
                     <button type="button" class="jump-latest" id="jumpLatest">Yeni mesajlar</button>
                     <div class="typing" id="typingIndicator"></div>
                     <form class="message-form" id="messageForm">
-                        <input type="text" id="messageInput" placeholder="Yaz…" autocomplete="off" maxlength="500" />
-                        <button type="submit">Gönder</button>
+                        <span class="composer-hash" aria-hidden="true">#</span><input type="text" id="messageInput" aria-label="Odaya mesaj yaz" placeholder="Sohbete bir şeyler yaz…" autocomplete="off" maxlength="500" />
+                        <button type="submit" aria-label="Mesajı gönder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m4 4 17 8-17 8 3-8-3-8Z"/><path d="M7 12h14"/></svg><span>Gönder</span></button>
                     </form>
+                    <p class="composer-note"><kbd>Enter</kbd> ile gönder <span>Herkesin sesine yer var.</span></p>
                 </section>
             </div>
         </main>
@@ -132,115 +128,123 @@
                         <line x1="12" y1="19" x2="12" y2="23"></line>
                         <line x1="8" y1="23" x2="16" y2="23"></line>
                     </svg>
-                </button>
+                <span class="ctrl-label">Mikrofon</span></button>
                 <button id="deafenButton" class="ctrl-btn" type="button" aria-pressed="false" aria-label="Kulaklığı kapat" data-tip="Kulaklık  Ctrl+Shift+D">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 14v-2a9 9 0 0 1 18 0v2"></path>
                         <path d="M21 16v2a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2z"></path>
                         <path d="M3 16v2a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2z"></path>
                     </svg>
-                </button>
+                <span class="ctrl-label">Kulakl?k</span></button>
                 <button id="cameraButton" class="ctrl-btn ctrl-btn--live" type="button" aria-pressed="false" aria-label="Kamerayı aç" data-tip="Kamera  Ctrl+Shift+V">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M23 7l-7 5 7 5V7z"></path>
                         <rect x="1" y="5" width="15" height="14"></rect>
                     </svg>
-                </button>
+                <span class="ctrl-label">Kamera</span></button>
                 <button id="screenShareButton" class="ctrl-btn ctrl-btn--live" type="button" aria-pressed="false" aria-label="Ekranını paylaş" data-tip="Ekran paylaş">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="2" y="4" width="20" height="13"></rect>
                         <line x1="8" y1="21" x2="16" y2="21"></line>
                         <line x1="12" y1="17" x2="12" y2="21"></line>
                     </svg>
-                </button>
+                <span class="ctrl-label">Payla?</span></button>
                 <button id="noiseSuppressionButton" class="ctrl-btn ctrl-btn--live" type="button" aria-pressed="false" aria-label="Gürültü engellemeyi aç" data-tip="Gürültü engelleme">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M2 13h2.5l1.8-5.5 2.4 11 2.6-13 2 7.5h2.2"></path>
                         <path d="M19 3.5 L19.6 5 L21 5.6 L19.6 6.2 L19 7.7 L18.4 6.2 L17 5.6 L18.4 5 Z" fill="currentColor" stroke="none"></path>
                     </svg>
-                </button>
+                <span class="ctrl-label">G?r?lt?</span></button>
                 <button id="settingsButton" class="ctrl-btn" type="button" aria-label="Ses ve video ayarları" data-tip="Aygıtlar  Ctrl+,">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.2.7.8 1.2 1.5 1.2H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path>
                     </svg>
-                </button>
+                <span class="ctrl-label">Ayarlar</span></button>
             </div>
 
             <div class="console__aside">
                 <div class="mode-group" id="micModeRow">
-                    <button type="button" class="mode-pill active" data-mode="always">Algıla</button>
+                    <button type="button" class="mode-pill active" data-mode="always">Ses etkinliği</button>
                     <button type="button" class="mode-pill" data-mode="ptt">Bas-konuş</button>
                     <button type="button" class="ptt-key-button" id="pttKeyButton" title="Bas-konuş tuşunu değiştir">Boşluk</button>
                 </div>
                 <span class="tx-indicator" id="txIndicator"></span>
-                <button id="leaveButton" class="leave-button" type="button">Çık</button>
+                <button id="leaveButton" class="leave-button" type="button" aria-label="Odadan ayrıl">Ayrıl ↗</button>
             </div>
         </footer>
     </div>
 
     <div class="overlay" id="settingsOverlay" hidden>
-        <div class="sheet sheet--wide" role="dialog" aria-labelledby="settingsTitle">
-            <div class="sheet__head">
-                <span class="chip">[ Aygıtlar ]</span>
-                <button type="button" class="icon-btn" id="settingsClose" aria-label="Kapat">✕</button>
+        <div class="sheet sheet--wide settings-sheet" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+            <div class="sheet__head"><div><span class="eyebrow">TAM SANA G?RE</span><h2 id="settingsTitle">Ayarlar</h2></div><button type="button" class="icon-btn" id="settingsClose" aria-label="Ayarlar? kapat">?</button></div>
+            <p class="settings-intro">Sesini, g?r?nt?n? ve alan?n? kendine g?re ayarla.</p>
+            <div class="settings-tabs" role="tablist" aria-label="Ayar kategorileri">
+                <button type="button" class="settings-tab active" id="tabAudio" role="tab" aria-selected="true" aria-controls="settingsAudio" data-settings-tab="audio">Ses</button>
+                <button type="button" class="settings-tab" id="tabVideo" role="tab" aria-selected="false" aria-controls="settingsVideo" data-settings-tab="video" tabindex="-1">G?r?nt?</button>
+                <button type="button" class="settings-tab" id="tabAppearance" role="tab" aria-selected="false" aria-controls="settingsAppearance" data-settings-tab="appearance" tabindex="-1">G?r?n?m</button>
+                <button type="button" class="settings-tab" id="tabShortcuts" role="tab" aria-selected="false" aria-controls="settingsShortcuts" data-settings-tab="shortcuts" tabindex="-1">K?sayollar</button>
             </div>
-            <h2 id="settingsTitle">Ses ve video</h2>
-
-            <div class="sheet-section">
-                <span class="sheet-kicker">Giriş</span>
-                <label class="field">
-                    <span>Mikrofon</span>
-                    <select id="micSelect"></select>
-                </label>
-                <div class="mic-meter" aria-hidden="true"><span id="settingsMicMeter"></span></div>
-            </div>
-
-            <div class="sheet-section">
-                <span class="sheet-kicker">Çıkış</span>
-                <label class="field">
-                    <span>Hoparlör / Kulaklık</span>
-                    <select id="speakerSelect"></select>
-                </label>
-                <button type="button" class="btn btn--ghost" id="testSpeakerBtn">Test sesi</button>
-                <label class="field">
-                    <span>Seviye</span>
-                    <input type="range" id="masterVolume" min="0" max="100" step="1" value="100" />
-                </label>
-            </div>
-
-            <div class="sheet-section">
-                <span class="sheet-kicker">Görüntü</span>
-                <label class="field">
-                    <span>Kamera</span>
-                    <select id="camSelect"></select>
-                </label>
-                <div class="settings-preview-wrap" id="settingsPreviewWrap">
-                    <video id="settingsCamPreview" class="settings-preview" autoplay playsinline muted></video>
-                    <span class="settings-preview-ph">Önizleme yok</span>
+            <section id="settingsAudio" role="tabpanel" aria-labelledby="tabAudio" data-settings-panel="audio">
+                <div class="sheet-section">
+                    <h3 class="sheet-kicker">Mikrofon</h3>
+                    <label class="field"><span>Giri? ayg?t?</span><select id="micSelect" aria-describedby="micTestStatus"></select></label>
+                    <label class="field"><span>Mikrofon seviyesi <output id="inputGainValue" for="inputGain">100%</output></span><input type="range" id="inputGain" min="0" max="200" step="1" value="100" /></label>
+                    <div class="meter-label"><span>Giri? seviyesi</span><span>Konu?arak kontrol et</span></div>
+                    <div class="mic-meter" aria-hidden="true"><span id="settingsMicMeter"></span></div>
+                    <div class="test-row"><button type="button" class="btn btn--ghost" id="micTestButton" aria-pressed="false">Mikrofonu test et</button><p class="hint" id="micTestStatus" role="status">Kendi sesini dinlemek i?in kulakl?k kullan.</p></div>
                 </div>
-            </div>
-
-            <div class="sheet-section">
-                <span class="sheet-kicker">İşleme</span>
-                <label class="field">
-                    <span>Ses algılama eşiği</span>
-                    <input type="range" id="vadThreshold" min="0" max="40" step="1" value="12" />
-                </label>
-                <label class="check"><input type="checkbox" id="echoCancelCheck" checked /> Yankı iptali</label>
-                <p class="hint" id="echoCancelHint">Aynı PC’de iki pencere deniyorsan bunu kapat veya kulaklık tak — hoparlör, senin sesini eko sanıp mikrofona kilit vurur.</p>
-                <label class="check"><input type="checkbox" id="noiseSuppressCheck" /> Gürültü engelleme</label>
-                <p class="hint" id="noiseSuppressHint">Sessiz veya ucuz mikrofonlarda sesi yutabilir. Kapalı bırakmak genelde daha net konuşma verir.</p>
-                <label class="check"><input type="checkbox" id="autoGainCheck" checked /> Otomatik kazanç</label>
-                <label class="check"><input type="checkbox" id="soundFxCheck" checked /> Katılma sesi</label>
-            </div>
-
-            <p class="hint">Ctrl+Shift+M mikrofon · Ctrl+Shift+D kulaklık · Ctrl+Shift+V kamera · Ctrl+, aygıtlar</p>
+                <div class="sheet-section">
+                    <h3 class="sheet-kicker">Ses i?leme</h3>
+                    <label class="check setting-toggle"><span><strong>G?r?lt? engelleme</strong><small>Klavye, fan ve ortam seslerini azalt?r.</small></span><input type="checkbox" id="noiseSuppressCheck" /></label>
+                    <p class="processing-status" id="audioProcessingStatus" role="status">Ses motoru haz?rlan?yor?</p>
+                    <p class="hint" id="noiseSuppressHint">Konu?man?n netli?ini mikrofon testiyle kontrol edebilirsin.</p>
+                    <label class="check setting-toggle"><span><strong>Yank? iptali</strong><small id="echoCancelHint">Hoparl?r?nden gelen sesin mikrofona geri d?nmesini azalt?r.</small></span><input type="checkbox" id="echoCancelCheck" checked /></label>
+                    <label class="check setting-toggle"><span><strong>Otomatik ses dengesi</strong><small>Farkl? konu?ma seviyelerini dengeler.</small></span><input type="checkbox" id="autoGainCheck" checked /></label>
+                    <label class="field"><span>Ses etkinli?i e?i?i <output id="vadThresholdValue" for="vadThreshold">6%</output></span><input type="range" id="vadThreshold" min="0" max="40" step="1" value="6" /></label>
+                    <p class="hint">D???k e?ik, hafif sesleri de iletir. Kelimelerin ba?lang?c? kesiliyorsa e?i?i azalt.</p>
+                </div>
+                <div class="sheet-section">
+                    <h3 class="sheet-kicker">Kulakl?k ve hoparl?r</h3>
+                    <label class="field"><span>??k?? ayg?t?</span><select id="speakerSelect"></select></label>
+                    <label class="field"><span>??k?? seviyesi <output id="masterVolumeValue" for="masterVolume">100%</output></span><input type="range" id="masterVolume" min="0" max="100" step="1" value="100" /></label>
+                    <button type="button" class="btn btn--ghost" id="testSpeakerBtn">Test sesini ?al</button>
+                    <label class="check setting-toggle"><span><strong>Kat?lma ve ayr?lma sesleri</strong><small>Odana biri geldi?inde veya ayr?ld???nda haberin olsun.</small></span><input type="checkbox" id="soundFxCheck" checked /></label>
+                </div>
+            </section>
+            <section id="settingsVideo" role="tabpanel" aria-labelledby="tabVideo" data-settings-panel="video" hidden>
+                <div class="sheet-section">
+                    <h3 class="sheet-kicker">Kamera</h3>
+                    <label class="field"><span>Kamera ayg?t?</span><select id="camSelect"></select></label>
+                    <label class="field"><span>G?r?nt? kalitesi</span><select id="cameraQualitySelect"><option value="360">360p ? Daha az veri</option><option value="720" selected>720p ? Dengeli</option><option value="1080">1080p ? Daha fazla ayr?nt?</option></select></label>
+                    <p class="hint">Ula??labilen kalite kamerana ve ba?lant?na g?re de?i?ir.</p>
+                    <div class="settings-preview-wrap" id="settingsPreviewWrap"><video id="settingsCamPreview" class="settings-preview" autoplay playsinline muted></video><span class="settings-preview-ph">Kamera ?nizlemen burada g?r?necek.</span></div>
+                    <button type="button" class="btn btn--ghost" id="cameraPreviewButton" aria-pressed="false">?nizlemeyi a?</button>
+                    <p class="hint">?nizleme yaln?zca sana g?r?n?r. Odaya g?r?nt? g?ndermek i?in kamera d??mesini kullan.</p>
+                </div>
+            </section>
+            <section id="settingsAppearance" role="tabpanel" aria-labelledby="tabAppearance" data-settings-panel="appearance" hidden>
+                <div class="sheet-section">
+                    <h3 class="sheet-kicker">Kendi alan?n</h3>
+                    <label class="field"><span>G?r?n?m</span><select id="themeSelect"><option value="midnight">Gece ? Yumu?ak koyu</option><option value="dark">K?m?r ? Daha y?ksek kontrast</option></select></label>
+                    <label class="field"><span>Mesaj boyutu <output id="chatFontSizeValue" for="chatFontSize">14 px</output></span><input type="range" id="chatFontSize" min="12" max="18" step="1" value="14" /></label>
+                    <label class="check setting-toggle"><span><strong>Kompakt sohbet</strong><small>Mesajlar aras?nda daha az bo?luk g?ster.</small></span><input type="checkbox" id="compactChatCheck" /></label>
+                    <label class="check setting-toggle"><span><strong>Hareketi azalt</strong><small>Ge?i?leri ve konu?ma animasyonlar?n? kapat.</small></span><input type="checkbox" id="reduceMotionCheck" /></label>
+                    <div class="appearance-preview"><span class="preview-avatar">R</span><div><strong>revo <small>?imdi</small></strong><p>Buras? tam sana g?re.</p></div></div>
+                    <p class="hint">Tercihlerin bu cihazda otomatik kaydedilir.</p>
+                </div>
+            </section>
+            <section id="settingsShortcuts" role="tabpanel" aria-labelledby="tabShortcuts" data-settings-panel="shortcuts" hidden>
+                <div class="sheet-section"><h3 class="sheet-kicker">Eller klavyedeyken</h3>
+                    <dl class="shortcut-list"><div><dt>Mikrofonu a? / kapat</dt><dd><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>M</kbd></dd></div><div><dt>Kulakl??? a? / kapat</dt><dd><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>D</kbd></dd></div><div><dt>Kameray? a? / kapat</dt><dd><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>V</kbd></dd></div><div><dt>Ayarlar? a?</dt><dd><kbd>Ctrl</kbd> <kbd>,</kbd></dd></div><div><dt>Pencereyi kapat</dt><dd><kbd>Esc</kbd></dd></div></dl>
+                    <p class="hint">Bas-konu? tu?unu alt ?ubuktan de?i?tirebilirsin. K?sayollar uygulama odaktayken ?al???r.</p>
+                </div>
+            </section>
         </div>
     </div>
 
     <div class="overlay" id="confirmOverlay" hidden>
-        <div class="sheet" role="dialog" aria-labelledby="confirmTitle">
+        <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
             <span class="chip">[ Onay ]</span>
             <h2 id="confirmTitle">Emin misin?</h2>
             <p class="hint" id="confirmText"></p>
@@ -263,8 +267,7 @@
 
     <div id="remoteAudios" style="display:none;" aria-hidden="true"></div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
-    <script src="~/js/cursor.js" asp-append-version="true"></script>
+    <script src="~/lib/signalr/signalr.min.js" asp-append-version="true"></script>
     <script src="~/js/titlebar.js" asp-append-version="true"></script>
     <script>
         window.REVO_BOOT = {
@@ -275,5 +278,6 @@
         };
     </script>
     <script src="~/js/room.js" asp-append-version="true"></script>
+    <script src="~/js/room-ui.js" asp-append-version="true"></script>
 </body>
 </html>
