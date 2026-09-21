@@ -1,4 +1,4 @@
-/* Locally hosted RNNoise -> voice gate -> WebRTC, with an explicit browser fallback. */
+/* Capture -> high-pass -> RNNoise -> user gain -> protected voice gate -> WebRTC. */
 export function finiteNumber(value, fallback, min, max) {
     const number = Number(value);
     return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
@@ -44,7 +44,8 @@ export async function createAudioPipeline(rawStream, options = {}) {
     const { noiseSuppression = true, onLevel = () => {}, onStatus = () => {} } = options;
     const track = rawStream.getAudioTracks()[0];
     if (!track) throw new Error("Mikrofon ses kanalı bulunamadı.");
-    let ctx, source, gain, gate, denoiser, destination, analyser;
+    if (track.readyState === "ended") throw new Error("Mikrofon bağlantısı kesildi.");
+    let ctx, source, filter, gain, gate, denoiser, destination, analyser;
     let meterTimer, closed = false, mode = "off", fallingBack = false;
     const nodes = [];
 
@@ -52,13 +53,10 @@ export async function createAudioPipeline(rawStream, options = {}) {
         if (!noiseSuppression) return "off";
         try {
             if (typeof track.applyConstraints === "function") {
-                await track.applyConstraints({ noiseSuppression: true });
+                await track.applyConstraints({ ...track.getConstraints?.(), noiseSuppression: true });
             }
             const settings = track.getSettings?.() || {};
-            if ("noiseSuppression" in settings || typeof HTMLMediaElement !== "undefined") {
-                return "browser";
-            }
-            return "unavailable";
+            return settings.noiseSuppression === true ? "browser" : "unavailable";
         } catch { return "unavailable"; }
     }
 
@@ -81,10 +79,11 @@ export async function createAudioPipeline(rawStream, options = {}) {
             if (closed) return;
             closed = true;
             clearInterval(meterTimer);
-            denoiser?.destroy();
-            for (const node of nodes) { try { node.disconnect(); } catch { /* already detached */ } }
-            gate?.port.close();
-            denoiser?.port.close();
+            try { denoiser?.destroy(); } catch { /* failed processor */ }
+            for (const node of nodes) {
+                try { node.disconnect(); } catch { /* already detached */ }
+                try { node.port?.close(); } catch { /* already closed */ }
+            }
             pipeline.stream?.getTracks().forEach((t) => t.stop());
             pipeline.monitorStream?.getTracks().forEach((t) => t.stop());
             if (ctx && ctx.state !== "closed") await ctx.close().catch(() => {});
@@ -96,17 +95,17 @@ export async function createAudioPipeline(rawStream, options = {}) {
         if (!Context) throw new Error("Web Audio desteklenmiyor.");
         ctx = new Context({ sampleRate: 48000, latencyHint: "interactive" });
         source = ctx.createMediaStreamSource(rawStream);
-        const filter = ctx.createBiquadFilter();
+        filter = ctx.createBiquadFilter();
         filter.type = "highpass";
         filter.frequency.value = 70;
         filter.Q.value = 0.707;
         gain = ctx.createGain();
-        source.connect(filter).connect(gain);
+        source.connect(filter);
         nodes.push(source, filter, gain);
         destination = ctx.createMediaStreamDestination();
         destination.channelCount = 1;
         nodes.push(destination);
-        let tail = gain;
+        let tail = filter;
 
         if (ctx.audioWorklet && typeof AudioWorkletNode !== "undefined") {
             try {
@@ -123,27 +122,49 @@ export async function createAudioPipeline(rawStream, options = {}) {
                     denoiser = new assets.RnnoiseWorkletNode(ctx, { maxChannels: 1, wasmBinary: assets.wasmBinary });
                     nodes.push(denoiser);
                     await waitForWorklet(denoiser);
-                    gain.connect(denoiser);
+                    filter.connect(denoiser);
                     tail = denoiser;
                     mode = "rnnoise";
                 } catch (error) {
                     console.warn("RNNoise yerine tarayıcı gürültü engellemesi kullanılacak:", error);
-                    denoiser?.destroy();
-                    denoiser?.disconnect();
+                    try { denoiser?.destroy(); } catch { /* failed processor */ }
+                    try { denoiser?.disconnect(); denoiser?.port.close(); } catch { /* failed processor */ }
+                    denoiser = null;
                     mode = await browserSuppression();
                 }
             } else mode = await browserSuppression();
         } else mode = await browserSuppression();
 
-        const output = gate || destination;
-        tail.connect(output);
+        // User volume must not change the signal presented to the trained denoiser.
+        // Keep it after suppression; the gate also protects amplified peaks.
+        tail.connect(gain);
+        gain.connect(gate || destination);
         if (gate) gate.connect(destination);
+        const startFallbackMeter = () => {
+            if (closed || meterTimer) return;
+            // Metering only: a throttled UI timer must never control outgoing speech.
+            analyser = ctx.createAnalyser();
+            analyser.fftSize = 1024;
+            const meterSource = ctx.createMediaStreamSource(destination.stream);
+            meterSource.connect(analyser);
+            nodes.push(meterSource, analyser);
+            const samples = new Float32Array(analyser.fftSize);
+            meterTimer = setInterval(() => {
+                if (closed) return;
+                analyser.getFloatTimeDomainData(samples);
+                let energy = 0;
+                for (const sample of samples) energy += sample * sample;
+                onLevel(Math.min(1, Math.sqrt(energy / samples.length) * 5), true);
+            }, 50);
+        };
         if (mode === "rnnoise") {
             denoiser.addEventListener("processorerror", async () => {
                 if (closed || fallingBack) return;
                 fallingBack = true;
-                try { gain.disconnect(denoiser); denoiser.disconnect(); } catch { /* failed graph */ }
-                gain.connect(output);
+                try { filter.disconnect(denoiser); } catch { /* failed graph */ }
+                try { denoiser.disconnect(); } catch { /* failed graph */ }
+                tail = filter;
+                filter.connect(gain);
                 mode = await browserSuppression();
                 if (!closed) onStatus(mode);
             });
@@ -151,24 +172,15 @@ export async function createAudioPipeline(rawStream, options = {}) {
         if (gate) {
             gate.addEventListener("processorerror", () => {
                 if (closed || !gate) return;
-                try { tail.disconnect(gate); gate.disconnect(); } catch { /* failed graph */ }
-                tail.connect(destination);
+                try { gain.disconnect(gate); } catch { /* failed graph */ }
+                try { gate.disconnect(); gate.port.close(); } catch { /* failed graph */ }
+                gain.connect(destination);
                 gate = null;
+                startFallbackMeter();
                 onStatus(mode);
             });
         } else {
-            // Metering only: a throttled UI timer must never control outgoing speech.
-            analyser = ctx.createAnalyser();
-            analyser.fftSize = 1024;
-            tail.connect(analyser);
-            nodes.push(analyser);
-            const samples = new Float32Array(analyser.fftSize);
-            meterTimer = setInterval(() => {
-                analyser.getFloatTimeDomainData(samples);
-                let energy = 0;
-                for (const sample of samples) energy += sample * sample;
-                onLevel(Math.min(1, Math.sqrt(energy / samples.length) * 5), true);
-            }, 50);
+            startFallbackMeter();
         }
         pipeline.monitorStream = destination.stream;
         pipeline.stream = new MediaStream(destination.stream.getAudioTracks().map((t) => t.clone()));

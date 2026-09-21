@@ -2,9 +2,12 @@
   "name": "revo",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "REVO browser assets and end-to-end verification",
   "scripts": {
     "vendor": "node scripts/vendor.cjs",
+    "test": "node --test tests/audio-engine.test.cjs",
+    "test:backend": "dotnet run --project tests/Revo.BackendChecks -c Release",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },

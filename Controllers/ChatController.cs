@@ -65,9 +65,8 @@ public class ChatController : Controller
             return View("Login");
         }
 
-        // Şifreyi URL'e koymadan Index'e taşımak için TempData kullanılıyor —
-        // tek bir redirect boyunca yaşar, Index içinde okunur okunmaz silinir.
-        // Index sayfası bunu SignalR'ın JoinRoom çağrısına gömecek (bkz. Index.cshtml).
+        // TempData'nın şifreli HttpOnly çerezi, oda şifresini URL'e koymadan
+        // Index'e taşır. Oda koduyla birlikte korunarak sayfa yenilemeyi destekler.
         TempData["RoomPassword"] = password;
         TempData["RoomPasswordCode"] = room.Code;
 
@@ -133,9 +132,6 @@ public class ChatController : Controller
         ViewBag.Username = username;
         ViewBag.RoomCode = found.Code;
         ViewBag.RoomName = found.Name;
-        // TempData bir kez okunduğunda otomatik temizlenir — sayfa yenilendiğinde
-        // (F5) burası null gelir, bu durumu Index.cshtml tarafında "JoinError" ile
-        // ele alıp kullanıcıyı Login'e (kod önceden dolu) geri yönlendiriyoruz.
         // Keep the last room credential in the encrypted, HttpOnly TempData
         // cookie so refresh works. Never reuse it for a different room.
         ViewBag.RoomPassword = TempData.Peek("RoomPasswordCode") as string == found.Code

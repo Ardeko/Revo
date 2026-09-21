@@ -90,7 +90,7 @@ class FakeNode {
         this.Q = {};
     }
     connect(node) { this.connections.push(node); return node; }
-    disconnect() { this.connections = []; }
+    disconnect(node) { this.connections = node ? this.connections.filter(connection => connection !== node) : []; }
     getFloatTimeDomainData(array) { array.fill(0.01); }
 }
 class FakeContext {
@@ -159,4 +159,118 @@ test('Web Audio initialization failure retains a usable, initially muted raw clo
     assert.equal(pipeline.stream.getAudioTracks()[0].enabled, false);
     await pipeline.close();
     assert.equal(raw.getAudioTracks()[0].readyState, 'live');
+});
+
+test('browser suppression reports unavailable when the browser ignores or refuses it', async () => {
+    global.AudioContext = FakeContext;
+    global.MediaStream = FakeStream;
+    global.HTMLMediaElement = class {};
+    const { createAudioPipeline } = await engineModule;
+    for (const settings of [{ noiseSuppression: false }, {}]) {
+        const pipeline = await createAudioPipeline(new FakeStream([new FakeTrack(settings)]));
+        assert.equal(pipeline.mode, 'unavailable');
+        await pipeline.close();
+    }
+    delete global.HTMLMediaElement;
+});
+
+test('browser fallback preserves echo cancellation and capture constraints', async () => {
+    global.AudioContext = FakeContext;
+    global.MediaStream = FakeStream;
+    const { createAudioPipeline } = await engineModule;
+    const track = new FakeTrack({ supportsNoise: true });
+    track.getConstraints = () => ({ echoCancellation: false, autoGainControl: false, deviceId: { exact: 'headset' } });
+    const pipeline = await createAudioPipeline(new FakeStream([track]));
+    assert.deepEqual(track.constraints, { echoCancellation: false, autoGainControl: false, deviceId: { exact: 'headset' }, noiseSuppression: true });
+    await pipeline.close();
+});
+
+test('a disconnected microphone is rejected instead of creating a live but silent sender', async () => {
+    const { createAudioPipeline } = await engineModule;
+    const track = new FakeTrack();
+    track.stop();
+    await assert.rejects(createAudioPipeline(new FakeStream([track])), /bağlantısı kesildi/);
+});
+
+class FakeWorkletNode extends FakeNode {
+    static nodes = [];
+    static pendingReady = null;
+    constructor(context, name) {
+        super();
+        this.name = name;
+        this.events = new Map();
+        this.portEvents = new Map();
+        this.port = {
+            addEventListener: (type, callback) => this.portEvents.set(type, callback),
+            removeEventListener: type => this.portEvents.delete(type),
+            start() {}, close: () => { this.portClosed = true; }, postMessage() {},
+        };
+        FakeWorkletNode.nodes.push(this);
+        if (name.includes('/rnnoise')) {
+            const ready = () => this.portEvents.get('message')?.({ data: { type: 'ready' } });
+            if (FakeWorkletNode.pendingReady) FakeWorkletNode.pendingReady(ready);
+            else queueMicrotask(ready);
+        }
+    }
+    addEventListener(type, callback) {
+        if (!this.events.has(type)) this.events.set(type, new Set());
+        this.events.get(type).add(callback);
+    }
+    removeEventListener(type, callback) { this.events.get(type)?.delete(callback); }
+    async fail() { await Promise.all([...this.events.get('processorerror') || []].map(callback => callback())); }
+}
+
+class FakeWorkletContext extends FakeContext {
+    constructor(options) { super(options); this.audioWorklet = { addModule: async () => {} }; }
+    createGain() { this.inputGain = super.createGain(); return this.inputGain; }
+    createMediaStreamDestination() { this.output = super.createMediaStreamDestination(); return this.output; }
+}
+
+function setupWorklets() {
+    global.AudioContext = FakeWorkletContext;
+    global.AudioWorkletNode = FakeWorkletNode;
+    global.MediaStream = FakeStream;
+    global.fetch = async () => ({ ok: true, arrayBuffer: async () => new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]).buffer });
+    FakeWorkletNode.nodes = [];
+}
+
+test('RNNoise initialization waits for worklet readiness before returning the sender', async () => {
+    setupWorklets();
+    const { createAudioPipeline } = await engineModule;
+    let markReady;
+    const waiting = new Promise(resolve => { FakeWorkletNode.pendingReady = ready => { markReady = ready; resolve(); }; });
+    let returned = false;
+    const result = createAudioPipeline(new FakeStream()).then(pipeline => { returned = true; return pipeline; });
+    await waiting;
+    assert.equal(returned, false);
+    markReady();
+    const pipeline = await result;
+    assert.equal(pipeline.mode, 'rnnoise');
+    assert.equal(pipeline.stream.getAudioTracks()[0].enabled, false);
+    await pipeline.close();
+    FakeWorkletNode.pendingReady = null;
+});
+
+test('either order of runtime denoiser and gate failure preserves the outgoing graph and meter', async () => {
+    const { createAudioPipeline } = await engineModule;
+    for (const gateFirst of [false, true]) {
+        setupWorklets();
+        const readings = [];
+        const pipeline = await createAudioPipeline(new FakeStream([new FakeTrack({ supportsNoise: true })]), {
+            onLevel: (level, open) => readings.push({ level, open }),
+        });
+        const gate = FakeWorkletNode.nodes.find(node => node.name === 'revo-voice-gate');
+        const denoiser = FakeWorkletNode.nodes.find(node => node.name.includes('/rnnoise'));
+        await (gateFirst ? gate : denoiser).fail();
+        await (gateFirst ? denoiser : gate).fail();
+        assert.equal(pipeline.mode, 'browser');
+        assert.equal(pipeline.supportsGate, false);
+        assert.deepEqual(pipeline.context.inputGain.connections, [pipeline.context.output]);
+        assert.equal(pipeline.stream.getAudioTracks()[0].enabled, false, 'failure must not unmute the sender');
+        await new Promise(resolve => setTimeout(resolve, 65));
+        assert.ok(readings.some(reading => reading.level > 0 && reading.open), 'meter survives gate failure');
+        await pipeline.close();
+        assert.equal(gate.portClosed, true);
+        assert.equal(denoiser.portClosed, true);
+    }
 });

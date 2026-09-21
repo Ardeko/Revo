@@ -9,10 +9,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>REVO — Odalar</title>
     <link rel="icon" type="image/png" href="~/favicon.ico" />
+    <script src="~/js/appearance.js" asp-append-version="true"></script>
     <link rel="stylesheet" href="~/css/revo-fonts.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/cursor.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/titlebar.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/css/revo-room.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/revo-eclipse.css" asp-append-version="true" />
 </head>
 <body class="revo-with-titlebar">
     <div class="revo-titlebar">
@@ -39,7 +39,7 @@
     <div class="rooms-page">
         <div class="rooms-wrap">
             <div class="rooms-head">
-                <h1>Aktif odalar</h1>
+                <div><span class="eyebrow">REVO / BULUŞMA NOKTASI</span><h1>Frekansını bul.</h1><p class="rooms-intro">Bir odaya katıl. Sohbetin bir parçası ol.</p></div>
                 <a class="rooms-back" asp-action="Login" asp-controller="Chat">Girişe dön</a>
             </div>
 
@@ -66,13 +66,12 @@
                             </div>
                             <div class="room-count">@room.Users.Count kişi</div>
                         </div>
-                        <a class="join-link" asp-action="Login" asp-controller="Chat" asp-route-roomCode="@room.Code">Katıl</a>
+                        <a class="join-link" asp-action="Login" asp-controller="Chat" asp-route-roomCode="@room.Code">Odaya katıl ↗</a>
                     </div>
                 }
             }
         </div>
     </div>
-    <script src="~/js/cursor.js" asp-append-version="true"></script>
     <script src="~/js/titlebar.js" asp-append-version="true"></script>
 </body>
 </html>
